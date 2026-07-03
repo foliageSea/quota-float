@@ -21,21 +21,30 @@ const error = ref('')
 const config = ref<AppConfig>({ ...defaultConfig })
 const refreshIntervalInput = ref(String(defaultConfig.refreshIntervalSeconds))
 const snapshot = ref<UsageSnapshot | null>(null)
+const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 let refreshTimer: number | undefined
 let dragPointerId: number | null = null
+let dragStartX = 0
+let dragStartY = 0
+let didDragBall = false
 
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
+const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
+const ballAveragePercent = computed(() => {
+  return ballMetric.value === 'fiveHour' ? fiveHourAveragePercent.value : sevenDayAveragePercent.value
+})
+const ballMetricLabel = computed(() => (ballMetric.value === 'fiveHour' ? '5小时' : '7天'))
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
 const groups = computed(() => snapshot.value?.groups ?? [])
 
 const ballTone = computed(() => {
   if (error.value) return '#ff5d5d'
-  if (fiveHourAveragePercent.value >= 90) return '#ff5d5d'
-  if (fiveHourAveragePercent.value >= 70) return '#f0b84b'
+  if (ballAveragePercent.value >= 90) return '#ff5d5d'
+  if (ballAveragePercent.value >= 70) return '#f0b84b'
   return '#20c997'
 })
 
-const usedPercent = computed(() => Math.min(100, Math.max(0, fiveHourAveragePercent.value)))
+const usedPercent = computed(() => Math.min(100, Math.max(0, ballAveragePercent.value)))
 
 const remainingPercent = computed(() => 100 - usedPercent.value)
 
@@ -73,14 +82,29 @@ async function setExpanded(value: boolean): Promise<void> {
 function startBallDrag(event: PointerEvent): void {
   if (event.button !== 0) return
   dragPointerId = event.pointerId
+  dragStartX = event.screenX
+  dragStartY = event.screenY
+  didDragBall = false
   ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
   void window.api.startCollapsedWindowDrag(event.screenX, event.screenY)
+}
+
+function trackBallDrag(event: PointerEvent): void {
+  if (dragPointerId !== event.pointerId) return
+  if (Math.abs(event.screenX - dragStartX) > 3 || Math.abs(event.screenY - dragStartY) > 3) {
+    didDragBall = true
+  }
 }
 
 function stopBallDrag(event: PointerEvent): void {
   if (dragPointerId !== event.pointerId) return
   dragPointerId = null
   void window.api.stopCollapsedWindowDrag()
+}
+
+function toggleBallMetric(): void {
+  if (didDragBall) return
+  ballMetric.value = ballMetric.value === 'fiveHour' ? 'sevenDay' : 'fiveHour'
 }
 
 async function refresh(): Promise<void> {
@@ -151,11 +175,13 @@ onBeforeUnmount(() => {
   <main class="h-full w-full overflow-hidden p-1 text-foreground">
     <button
       v-if="!expanded"
-      class="token-reservoir relative flex h-[70px] w-[70px] cursor-move items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
+      class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
       :style="{ '--water-level': waterLevel, '--water-color': ballTone }"
-      title="展开 Token Ball"
+      :title="`切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}，双击展开`"
+      @click="toggleBallMetric"
       @dblclick="setExpanded(true)"
       @pointerdown="startBallDrag"
+      @pointermove="trackBallDrag"
       @pointerup="stopBallDrag"
       @pointercancel="stopBallDrag"
       @contextmenu.prevent
@@ -167,7 +193,7 @@ onBeforeUnmount(() => {
       <span class="token-reservoir__shine absolute rounded-full" />
       <span class="relative z-10 flex flex-col items-center leading-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.55)]">
         <span class="text-lg font-semibold text-white">{{ remainingPercent }}%</span>
-        <span class="mt-1 text-[10px] text-white/72">剩余</span>
+        <span class="mt-1 text-[10px] text-white/72">{{ ballMetricLabel }}</span>
       </span>
     </button>
 
