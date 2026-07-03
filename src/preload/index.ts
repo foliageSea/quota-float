@@ -6,6 +6,8 @@ export type AppConfig = {
   adminApiKey: string
   selectedGroupId: number | 'all'
   refreshIntervalSeconds: number
+  selectedProxyId: number | 'none'
+  proxyPollIntervalSeconds: number
 }
 
 export type ApiGroup = {
@@ -46,6 +48,44 @@ export type UsageSnapshot = {
   }
 }
 
+export type ApiProxy = {
+  id: number
+  name: string
+  protocol: string
+  host: string
+  port: number
+  status: string
+  latency_ms?: number
+  latency_status?: string
+  latency_message?: string
+  ip_address?: string
+  country?: string
+  country_code?: string
+  region?: string
+  city?: string
+  quality_status?: string
+  quality_score?: number
+  quality_grade?: string
+  quality_summary?: string
+  quality_checked?: number
+}
+
+export type ProxySnapshot = {
+  updatedAt: string
+  selectedProxyId: number | 'none'
+  proxies: ApiProxy[]
+  result: {
+    success: boolean
+    message: string
+    latency_ms?: number
+    ip_address?: string
+    city?: string
+    region?: string
+    country?: string
+    country_code?: string
+  } | null
+}
+
 // Custom APIs for renderer
 const api = {
   getConfig: () => ipcRenderer.invoke('config:get'),
@@ -53,6 +93,8 @@ const api = {
   getGroups: () => ipcRenderer.invoke('groups:get'),
   getLatestUsage: () => ipcRenderer.invoke('usage:get-latest'),
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
+  getLatestProxy: () => ipcRenderer.invoke('proxy:get-latest'),
+  refreshProxy: () => ipcRenderer.invoke('proxy:refresh'),
   showWindowMenu: () => ipcRenderer.invoke('window:show-menu'),
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => {
     const listener = (_: Electron.IpcRendererEvent, visible: boolean): void => callback(visible)
@@ -68,6 +110,11 @@ const api = {
     const listener = (_: Electron.IpcRendererEvent, snapshot: UsageSnapshot): void => callback(snapshot)
     ipcRenderer.on('usage:updated', listener)
     return () => ipcRenderer.removeListener('usage:updated', listener)
+  },
+  onProxyUpdated: (callback: (snapshot: ProxySnapshot) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, snapshot: ProxySnapshot): void => callback(snapshot)
+    ipcRenderer.on('proxy:updated', listener)
+    return () => ipcRenderer.removeListener('proxy:updated', listener)
   },
   setPanelExpanded: (expanded: boolean) => ipcRenderer.invoke('window:set-expanded', expanded),
   showPanel: () => ipcRenderer.invoke('window:show-panel'),

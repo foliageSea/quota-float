@@ -9,6 +9,8 @@ type AppConfig = {
   adminApiKey: string
   selectedGroupId: number | 'all'
   refreshIntervalSeconds: number
+  selectedProxyId: number | 'none'
+  proxyPollIntervalSeconds: number
 }
 
 type ApiGroup = {
@@ -31,6 +33,39 @@ type ApiAccount = {
   extra?: Record<string, unknown>
   group_ids?: number[]
   groups?: ApiGroup[]
+}
+
+type ApiProxy = {
+  id: number
+  name: string
+  protocol: string
+  host: string
+  port: number
+  status: string
+  latency_ms?: number
+  latency_status?: string
+  latency_message?: string
+  ip_address?: string
+  country?: string
+  country_code?: string
+  region?: string
+  city?: string
+  quality_status?: string
+  quality_score?: number
+  quality_grade?: string
+  quality_summary?: string
+  quality_checked?: number
+}
+
+type ProxyTestResult = {
+  success: boolean
+  message: string
+  latency_ms?: number
+  ip_address?: string
+  city?: string
+  region?: string
+  country?: string
+  country_code?: string
 }
 
 type UsageAccount = {
@@ -60,7 +95,9 @@ const defaultConfig: AppConfig = {
   baseUrl: '',
   adminApiKey: '',
   selectedGroupId: 'all',
-  refreshIntervalSeconds: 60
+  refreshIntervalSeconds: 60,
+  selectedProxyId: 'none',
+  proxyPollIntervalSeconds: 300
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -70,6 +107,7 @@ let tray: Tray | null = null
 let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
 let collapsedDragOffset: { x: number; y: number } | null = null
 let latestUsageSnapshot: Awaited<ReturnType<typeof refreshUsage>> | null = null
+let latestProxySnapshot: Awaited<ReturnType<typeof refreshProxy>> | null = null
 
 function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -85,7 +123,9 @@ function loadConfig(): AppConfig {
       ...defaultConfig,
       ...saved,
       selectedGroupId: saved.selectedGroupId ?? 'all',
-      refreshIntervalSeconds: Math.max(15, Number(saved.refreshIntervalSeconds ?? 60) || 60)
+      refreshIntervalSeconds: Math.max(15, Number(saved.refreshIntervalSeconds ?? 60) || 60),
+      selectedProxyId: saved.selectedProxyId ?? 'none',
+      proxyPollIntervalSeconds: Math.max(15, Number(saved.proxyPollIntervalSeconds ?? 300) || 300)
     }
   } catch {
     return defaultConfig
@@ -97,7 +137,9 @@ function saveConfig(config: AppConfig): AppConfig {
     baseUrl: config.baseUrl.trim().replace(/\/+$/, ''),
     adminApiKey: config.adminApiKey.trim(),
     selectedGroupId: config.selectedGroupId,
-    refreshIntervalSeconds: Math.max(15, Number(config.refreshIntervalSeconds) || 60)
+    refreshIntervalSeconds: Math.max(15, Number(config.refreshIntervalSeconds) || 60),
+    selectedProxyId: config.selectedProxyId,
+    proxyPollIntervalSeconds: Math.max(15, Number(config.proxyPollIntervalSeconds) || 300)
   }
 
   writeFileSync(getConfigPath(), JSON.stringify(normalized, null, 2))
@@ -190,6 +232,17 @@ async function getGroups(): Promise<ApiGroup[]> {
   return sub2apiFetch<ApiGroup[]>('api/v1/admin/groups/all')
 }
 
+async function getProxies(): Promise<ApiProxy[]> {
+  const data = await sub2apiFetch<{ items: ApiProxy[] }>(
+    'api/v1/admin/proxies?page=1&page_size=200&sort_by=id&sort_order=desc'
+  )
+  return data.items
+}
+
+async function testProxy(proxyId: number): Promise<ProxyTestResult> {
+  return sub2apiFetch<ProxyTestResult>(`api/v1/admin/proxies/${proxyId}/test`, { method: 'POST' })
+}
+
 async function refreshUsage(): Promise<{
   updatedAt: string
   selectedGroupId: number | 'all'
@@ -229,6 +282,25 @@ async function refreshUsage(): Promise<{
   }
 }
 
+async function refreshProxy(): Promise<{
+  updatedAt: string
+  selectedProxyId: number | 'none'
+  proxies: ApiProxy[]
+  result: ProxyTestResult | null
+}> {
+  const config = requireConfig()
+  const proxies = await getProxies()
+  const selectedProxyId = config.selectedProxyId
+  const result = selectedProxyId === 'none' ? null : await testProxy(selectedProxyId)
+
+  return {
+    updatedAt: new Date().toISOString(),
+    selectedProxyId,
+    proxies,
+    result
+  }
+}
+
 function sendPanelVisibilityChanged(): void {
   const visible = panelWindow?.isVisible() ?? false
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -242,10 +314,22 @@ function broadcastUsageSnapshot(snapshot: Awaited<ReturnType<typeof refreshUsage
   })
 }
 
+function broadcastProxySnapshot(snapshot: Awaited<ReturnType<typeof refreshProxy>>): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('proxy:updated', snapshot)
+  })
+}
+
 async function refreshUsageSnapshot(): Promise<Awaited<ReturnType<typeof refreshUsage>>> {
   latestUsageSnapshot = await refreshUsage()
   broadcastUsageSnapshot(latestUsageSnapshot)
   return latestUsageSnapshot
+}
+
+async function refreshProxySnapshot(): Promise<Awaited<ReturnType<typeof refreshProxy>>> {
+  latestProxySnapshot = await refreshProxy()
+  broadcastProxySnapshot(latestProxySnapshot)
+  return latestProxySnapshot
 }
 
 function getRendererUrl(view: 'ball' | 'panel'): string {
@@ -471,6 +555,8 @@ app.whenReady().then(() => {
   ipcMain.handle('groups:get', () => getGroups())
   ipcMain.handle('usage:get-latest', () => latestUsageSnapshot)
   ipcMain.handle('usage:refresh', () => refreshUsageSnapshot())
+  ipcMain.handle('proxy:get-latest', () => latestProxySnapshot)
+  ipcMain.handle('proxy:refresh', () => refreshProxySnapshot())
   ipcMain.handle('window:show-menu', () => showAppMenu())
   ipcMain.handle('window:show-panel', () => showPanel())
   ipcMain.handle('window:hide-panel', () => hidePanel())

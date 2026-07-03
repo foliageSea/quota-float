@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, ChevronUp, RefreshCw, Save, Settings, X } from '@lucide/vue'
+import { AlertCircle, ChevronDown, ChevronUp, RefreshCw, Save, Settings, Wifi, X } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import Progress from './components/ui/Progress.vue'
-import type { AppConfig, UsageAccount, UsageSnapshot } from '../../preload/index'
+import type { ApiProxy, AppConfig, UsageAccount, UsageSnapshot, ProxySnapshot } from '../../preload/index'
 
 const defaultConfig: AppConfig = {
   baseUrl: '',
   adminApiKey: '',
   selectedGroupId: 'all',
-  refreshIntervalSeconds: 60
+  refreshIntervalSeconds: 60,
+  selectedProxyId: 'none',
+  proxyPollIntervalSeconds: 300
 }
 
 const view = new URLSearchParams(window.location.search).get('view') === 'panel' ? 'panel' : 'ball'
@@ -23,15 +25,19 @@ const saving = ref(false)
 const error = ref('')
 const config = ref<AppConfig>({ ...defaultConfig })
 const refreshIntervalInput = ref(String(defaultConfig.refreshIntervalSeconds))
+const proxyPollIntervalInput = ref(String(defaultConfig.proxyPollIntervalSeconds))
 const snapshot = ref<UsageSnapshot | null>(null)
+const proxySnapshot = ref<ProxySnapshot | null>(null)
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 let refreshTimer: number | undefined
+let proxyRefreshTimer: number | undefined
 let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
 let didDragBall = false
 let removePanelVisibilityListener: (() => void) | undefined
 let removeUsageUpdatedListener: (() => void) | undefined
+let removeProxyUpdatedListener: (() => void) | undefined
 
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
@@ -41,6 +47,12 @@ const ballAveragePercent = computed(() => {
 const ballMetricLabel = computed(() => (ballMetric.value === 'fiveHour' ? '5小时' : '7天'))
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
 const groups = computed(() => snapshot.value?.groups ?? [])
+const proxies = computed(() => proxySnapshot.value?.proxies ?? [])
+const selectedProxy = computed<ApiProxy | null>(() => {
+  const selectedProxyId = config.value.selectedProxyId
+  if (selectedProxyId === 'none') return null
+  return proxies.value.find((proxy) => proxy.id === Number(selectedProxyId)) ?? null
+})
 
 const ballTone = computed(() => {
   if (error.value) return '#ff5d5d'
@@ -77,6 +89,20 @@ function formatDate(value: string): string {
 
 function accountLabel(account: UsageAccount): string {
   return account.email || account.name
+}
+
+function proxyLocation(proxy: ApiProxy | null): string {
+  if (!proxy) return '--'
+  return [proxy.country, proxy.region, proxy.city].filter(Boolean).join(' / ') || '--'
+}
+
+function proxyEndpoint(proxy: ApiProxy | null): string {
+  if (!proxy) return '--'
+  return `${proxy.protocol}://${proxy.host}:${proxy.port}`
+}
+
+function formatLatency(value: number | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value}ms` : '--'
 }
 
 async function setExpanded(value: boolean): Promise<void> {
@@ -144,6 +170,16 @@ async function refresh(): Promise<void> {
   }
 }
 
+async function refreshProxy(): Promise<void> {
+  if (!config.value.baseUrl || !config.value.adminApiKey) return
+
+  try {
+    proxySnapshot.value = await window.api.refreshProxy()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '代理监测刷新失败'
+  }
+}
+
 async function save(): Promise<void> {
   saving.value = true
   error.value = ''
@@ -154,11 +190,15 @@ async function save(): Promise<void> {
       baseUrl: config.value.baseUrl,
       adminApiKey: config.value.adminApiKey,
       selectedGroupId,
-      refreshIntervalSeconds: Number(refreshIntervalInput.value) || 60
+      refreshIntervalSeconds: Number(refreshIntervalInput.value) || 60,
+      selectedProxyId:
+        config.value.selectedProxyId === 'none' ? 'none' : Number(config.value.selectedProxyId),
+      proxyPollIntervalSeconds: Number(proxyPollIntervalInput.value) || 300
     })
     refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
+    proxyPollIntervalInput.value = String(config.value.proxyPollIntervalSeconds)
     showSettings.value = false
-    await refresh()
+    await Promise.all([refresh(), refreshProxy()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : '保存失败'
   } finally {
@@ -173,9 +213,21 @@ function resetTimer(): void {
   refreshTimer = window.setInterval(refresh, interval)
 }
 
+function resetProxyTimer(): void {
+  if (!isPanelView) return
+  if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
+  const interval = Math.max(15, config.value.proxyPollIntervalSeconds) * 1000
+  proxyRefreshTimer = window.setInterval(refreshProxy, interval)
+}
+
 watch(
   () => config.value.refreshIntervalSeconds,
   () => resetTimer()
+)
+
+watch(
+  () => config.value.proxyPollIntervalSeconds,
+  () => resetProxyTimer()
 )
 
 onMounted(async () => {
@@ -185,18 +237,26 @@ onMounted(async () => {
   removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
     snapshot.value = value
   })
+  removeProxyUpdatedListener = window.api.onProxyUpdated((value) => {
+    proxySnapshot.value = value
+  })
   config.value = await window.api.getConfig()
   refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
+  proxyPollIntervalInput.value = String(config.value.proxyPollIntervalSeconds)
   showSettings.value = !config.value.baseUrl || !config.value.adminApiKey
   snapshot.value = await window.api.getLatestUsage()
-  if (isPanelView || !snapshot.value) await refresh()
+  proxySnapshot.value = await window.api.getLatestProxy()
+  if (isPanelView || !snapshot.value) await Promise.all([refresh(), refreshProxy()])
   resetTimer()
+  resetProxyTimer()
 })
 
 onBeforeUnmount(() => {
   removePanelVisibilityListener?.()
   removeUsageUpdatedListener?.()
+  removeProxyUpdatedListener?.()
   if (refreshTimer) window.clearInterval(refreshTimer)
+  if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
 })
 </script>
 
@@ -280,11 +340,61 @@ onBeforeUnmount(() => {
               <Input v-model="refreshIntervalInput" type="number" />
             </label>
           </div>
+          <div class="grid grid-cols-[1fr_96px] gap-2">
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">监控代理</span>
+              <select v-model="config.selectedProxyId" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
+                <option value="none">不监控代理</option>
+                <option v-for="proxy in proxies" :key="proxy.id" :value="proxy.id">
+                  {{ proxy.name }} · {{ proxy.host }}:{{ proxy.port }}
+                </option>
+              </select>
+            </label>
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">代理秒</span>
+              <Input v-model="proxyPollIntervalInput" type="number" />
+            </label>
+          </div>
           <Button type="submit" class="w-full" :disabled="saving">
             <Save class="h-4 w-4" />
             保存配置
           </Button>
         </form>
+
+        <section class="mb-3 rounded-md border border-border bg-background/55 p-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Wifi class="h-3.5 w-3.5" />
+                代理监测
+              </div>
+              <div class="mt-1 truncate text-sm font-medium">
+                {{ selectedProxy?.name ?? '未选择代理' }}
+              </div>
+            </div>
+            <span
+              class="shrink-0 rounded px-2 py-0.5 text-[11px]"
+              :class="proxySnapshot?.result?.success ? 'bg-emerald-500/15 text-emerald-300' : 'bg-secondary text-secondary-foreground'"
+            >
+              {{ proxySnapshot?.result ? (proxySnapshot.result.success ? '可用' : '异常') : '待监测' }}
+            </span>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div class="min-w-0 rounded bg-muted/35 p-2">
+              <div class="text-muted-foreground">延迟</div>
+              <div class="mt-1 truncate font-medium">{{ formatLatency(proxySnapshot?.result?.latency_ms ?? selectedProxy?.latency_ms) }}</div>
+            </div>
+            <div class="min-w-0 rounded bg-muted/35 p-2">
+              <div class="text-muted-foreground">出口 IP</div>
+              <div class="mt-1 truncate font-medium">{{ proxySnapshot?.result?.ip_address ?? selectedProxy?.ip_address ?? '--' }}</div>
+            </div>
+          </div>
+          <div class="mt-2 space-y-1 text-[11px] text-muted-foreground">
+            <div class="truncate">{{ proxyEndpoint(selectedProxy) }}</div>
+            <div class="truncate">{{ proxyLocation(selectedProxy) }}</div>
+            <div class="truncate">{{ proxySnapshot?.result?.message ?? selectedProxy?.quality_summary ?? selectedProxy?.latency_message ?? '暂无结果' }}</div>
+          </div>
+        </section>
 
         <div class="grid grid-cols-2 gap-2">
           <div class="rounded-md border border-border bg-background/55 p-3">
