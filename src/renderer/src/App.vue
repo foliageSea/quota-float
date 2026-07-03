@@ -148,7 +148,6 @@ onBeforeUnmount(() => {
         class="absolute right-2 top-2 h-2.5 w-2.5 rounded-full"
         :class="loading ? 'animate-pulse bg-warning' : error ? 'bg-destructive' : 'bg-primary'"
       />
-      <span class="no-drag absolute inset-0 rounded-full" @click="setExpanded(true)" />
     </button>
 
     <section v-else class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
