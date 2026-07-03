@@ -78,14 +78,6 @@ const proxyStatusLabel = computed(() => {
   if (proxySnapshot.value?.result) return 'ERR'
   return selectedProxy.value ? 'IP' : '--'
 })
-const proxyStatusTitle = computed(() => {
-  if (config.value.selectedProxyId === 'none') return '未监控代理'
-  const name = selectedProxy.value?.name ?? '代理'
-  const latency = formatLatency(proxySnapshot.value?.result?.latency_ms ?? selectedProxy.value?.latency_ms)
-  const ip = proxySnapshot.value?.result?.ip_address ?? selectedProxy.value?.ip_address ?? '--'
-  return `${name} · ${proxyStatusLabel.value} · ${ip} · ${latency}`
-})
-
 const ballTone = computed(() => {
   if (error.value) return '#ff5d5d'
   if (ballAveragePercent.value >= 90) return '#ff5d5d'
@@ -312,7 +304,6 @@ onBeforeUnmount(() => {
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
         :style="{ '--water-level': waterLevel, '--water-color': ballTone, '--remaining-percent': `${remainingPercent}%` }"
-        :title="panelVisible ? '隐藏面板' : `切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}`"
         @click="openPanelFromBall"
         @pointerdown="startBallDrag"
         @pointermove="trackBallDrag"
@@ -330,7 +321,6 @@ onBeforeUnmount(() => {
       <div
         class="absolute bottom-0 right-0 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
         :style="{ color: proxyStatusTone }"
-        :title="proxyStatusTitle"
       >
         {{ proxyStatusLabel }}
       </div>
@@ -343,10 +333,10 @@ onBeforeUnmount(() => {
           <div class="text-[11px] text-muted-foreground">{{ accountCount }} accounts</div>
         </div>
         <div class="no-drag flex items-center gap-1">
-          <Button variant="ghost" size="icon" title="刷新" :disabled="loading" @click="refreshActiveTab">
+          <Button variant="ghost" size="icon" :disabled="loading" @click="refreshActiveTab">
             <RefreshCw class="h-4 w-4" :class="loading && 'animate-spin'" />
           </Button>
-          <Button variant="ghost" size="icon" title="收起" @click="setExpanded(false)">
+          <Button variant="ghost" size="icon" @click="setExpanded(false)">
             <ChevronDown class="h-4 w-4" />
           </Button>
         </div>
