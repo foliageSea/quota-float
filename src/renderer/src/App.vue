@@ -22,6 +22,7 @@ const config = ref<AppConfig>({ ...defaultConfig })
 const refreshIntervalInput = ref(String(defaultConfig.refreshIntervalSeconds))
 const snapshot = ref<UsageSnapshot | null>(null)
 let refreshTimer: number | undefined
+let dragPointerId: number | null = null
 
 const maxPercent = computed(() => snapshot.value?.summary.fiveHourMax ?? 0)
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
@@ -67,6 +68,19 @@ function accountLabel(account: UsageAccount): string {
 async function setExpanded(value: boolean): Promise<void> {
   expanded.value = value
   await window.api.setPanelExpanded(value)
+}
+
+function startBallDrag(event: PointerEvent): void {
+  if (event.button !== 0) return
+  dragPointerId = event.pointerId
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  void window.api.startCollapsedWindowDrag(event.screenX, event.screenY)
+}
+
+function stopBallDrag(event: PointerEvent): void {
+  if (dragPointerId !== event.pointerId) return
+  dragPointerId = null
+  void window.api.stopCollapsedWindowDrag()
 }
 
 async function refresh(): Promise<void> {
@@ -137,11 +151,14 @@ onBeforeUnmount(() => {
   <main class="h-full w-full overflow-hidden p-1 text-foreground">
     <button
       v-if="!expanded"
-      class="drag-region token-reservoir relative flex h-[70px] w-[70px] items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
+      class="token-reservoir relative flex h-[70px] w-[70px] cursor-move items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
       :style="{ '--water-level': waterLevel, '--water-color': ballTone }"
       title="展开 Token Ball"
       @dblclick="setExpanded(true)"
-      @contextmenu.prevent="setExpanded(true)"
+      @pointerdown="startBallDrag"
+      @pointerup="stopBallDrag"
+      @pointercancel="stopBallDrag"
+      @contextmenu.prevent
     >
       <span class="token-reservoir__glass absolute inset-0 rounded-full" />
       <span class="token-reservoir__water absolute inset-x-0 bottom-0" />

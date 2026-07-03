@@ -53,6 +53,9 @@ const api = {
   getGroups: () => ipcRenderer.invoke('groups:get'),
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
   setPanelExpanded: (expanded: boolean) => ipcRenderer.invoke('window:set-expanded', expanded),
+  startCollapsedWindowDrag: (cursorX: number, cursorY: number) =>
+    ipcRenderer.invoke('window:start-collapsed-drag', cursorX, cursorY),
+  stopCollapsedWindowDrag: () => ipcRenderer.invoke('window:stop-collapsed-drag'),
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('window:set-always-on-top', enabled)
 }
 

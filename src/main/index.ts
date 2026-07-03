@@ -66,6 +66,8 @@ const defaultConfig: AppConfig = {
 let mainWindow: BrowserWindow | null = null
 let panelExpanded = false
 let collapsedPosition: { x: number; y: number } | null = null
+let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
+let collapsedDragOffset: { x: number; y: number } | null = null
 
 function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -227,6 +229,7 @@ async function refreshUsage(): Promise<{
 
 function setPanelExpanded(expanded: boolean): void {
   if (!mainWindow) return
+  if (expanded) stopCollapsedWindowDrag()
   const collapsedSize = 78
   const expandedSize = { width: 390, height: 580 }
 
@@ -234,8 +237,14 @@ function setPanelExpanded(expanded: boolean): void {
     const bounds = mainWindow.getBounds()
     collapsedPosition = { x: bounds.x, y: bounds.y }
     const { workArea } = screen.getDisplayMatching(bounds)
-    const x = Math.round(workArea.x + (workArea.width - expandedSize.width) / 2)
-    const y = Math.round(workArea.y + (workArea.height - expandedSize.height) / 2)
+    const ballCenterX = bounds.x + bounds.width / 2
+    const aboveBallY = bounds.y - expandedSize.height - 8
+    const minX = workArea.x
+    const maxX = workArea.x + workArea.width - expandedSize.width
+    const minY = workArea.y
+    const maxY = workArea.y + workArea.height - expandedSize.height
+    const x = Math.round(Math.min(Math.max(ballCenterX - expandedSize.width / 2, minX), maxX))
+    const y = Math.round(Math.min(Math.max(aboveBallY, minY), maxY))
 
     panelExpanded = true
     mainWindow.setResizable(true)
@@ -263,6 +272,33 @@ function setPanelExpanded(expanded: boolean): void {
   mainWindow.setResizable(false)
 }
 
+function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
+  if (!mainWindow || panelExpanded) return
+  const bounds = mainWindow.getBounds()
+  collapsedDragOffset = { x: cursorX - bounds.x, y: cursorY - bounds.y }
+  if (collapsedDragTimer) clearInterval(collapsedDragTimer)
+
+  collapsedDragTimer = setInterval(() => {
+    if (!mainWindow || !collapsedDragOffset || panelExpanded) {
+      stopCollapsedWindowDrag()
+      return
+    }
+
+    const point = screen.getCursorScreenPoint()
+    mainWindow.setPosition(
+      Math.round(point.x - collapsedDragOffset.x),
+      Math.round(point.y - collapsedDragOffset.y),
+      false
+    )
+  }, 16)
+}
+
+function stopCollapsedWindowDrag(): void {
+  if (collapsedDragTimer) clearInterval(collapsedDragTimer)
+  collapsedDragTimer = null
+  collapsedDragOffset = null
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 78,
@@ -287,16 +323,6 @@ function createWindow(): void {
 
   window.on('ready-to-show', () => {
     window.show()
-  })
-
-  window.on('system-context-menu', (event) => {
-    event.preventDefault()
-    if (!panelExpanded) setPanelExpanded(true)
-  })
-
-  window.webContents.on('context-menu', (event) => {
-    event.preventDefault()
-    if (!panelExpanded) setPanelExpanded(true)
   })
 
   window.webContents.setWindowOpenHandler((details) => {
@@ -332,6 +358,10 @@ app.whenReady().then(() => {
   ipcMain.handle('groups:get', () => getGroups())
   ipcMain.handle('usage:refresh', () => refreshUsage())
   ipcMain.handle('window:set-expanded', (_, expanded: boolean) => setPanelExpanded(expanded))
+  ipcMain.handle('window:start-collapsed-drag', (_, cursorX: number, cursorY: number) =>
+    startCollapsedWindowDrag(cursorX, cursorY)
+  )
+  ipcMain.handle('window:stop-collapsed-drag', () => stopCollapsedWindowDrag())
   ipcMain.handle('window:set-always-on-top', (_, enabled: boolean) => {
     mainWindow?.setAlwaysOnTop(enabled)
   })

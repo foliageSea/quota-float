@@ -7,6 +7,8 @@ export type TokenBallAPI = {
   getGroups: () => Promise<ApiGroup[]>
   refreshUsage: () => Promise<UsageSnapshot>
   setPanelExpanded: (expanded: boolean) => Promise<void>
+  startCollapsedWindowDrag: (cursorX: number, cursorY: number) => Promise<void>
+  stopCollapsedWindowDrag: () => Promise<void>
   setAlwaysOnTop: (enabled: boolean) => Promise<void>
 }
 
