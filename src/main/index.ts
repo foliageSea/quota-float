@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -64,6 +64,8 @@ const defaultConfig: AppConfig = {
 }
 
 let mainWindow: BrowserWindow | null = null
+let panelExpanded = false
+let collapsedPosition: { x: number; y: number } | null = null
 
 function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -225,9 +227,39 @@ async function refreshUsage(): Promise<{
 
 function setPanelExpanded(expanded: boolean): void {
   if (!mainWindow) return
+  const collapsedSize = 78
+  const expandedSize = { width: 390, height: 580 }
+
+  if (expanded && !panelExpanded) {
+    const bounds = mainWindow.getBounds()
+    collapsedPosition = { x: bounds.x, y: bounds.y }
+    const { workArea } = screen.getDisplayMatching(bounds)
+    const x = Math.round(workArea.x + (workArea.width - expandedSize.width) / 2)
+    const y = Math.round(workArea.y + (workArea.height - expandedSize.height) / 2)
+
+    panelExpanded = true
+    mainWindow.setResizable(true)
+    mainWindow.setMinimumSize(360, 480)
+    mainWindow.setBounds({ x, y, ...expandedSize }, true)
+    mainWindow.setResizable(false)
+    return
+  }
+
+  if (!expanded && panelExpanded) {
+    const position = collapsedPosition ?? mainWindow.getBounds()
+
+    panelExpanded = false
+    mainWindow.setResizable(true)
+    mainWindow.setMinimumSize(collapsedSize, collapsedSize)
+    mainWindow.setBounds({ x: position.x, y: position.y, width: collapsedSize, height: collapsedSize }, true)
+    mainWindow.setResizable(false)
+    return
+  }
+
+  panelExpanded = expanded
   mainWindow.setResizable(true)
-  mainWindow.setSize(expanded ? 390 : 78, expanded ? 580 : 78, true)
-  mainWindow.setMinimumSize(expanded ? 360 : 78, expanded ? 480 : 78)
+  mainWindow.setSize(expanded ? expandedSize.width : collapsedSize, expanded ? expandedSize.height : collapsedSize, true)
+  mainWindow.setMinimumSize(expanded ? 360 : collapsedSize, expanded ? 480 : collapsedSize)
   mainWindow.setResizable(false)
 }
 
@@ -255,6 +287,16 @@ function createWindow(): void {
 
   window.on('ready-to-show', () => {
     window.show()
+  })
+
+  window.on('system-context-menu', (event) => {
+    event.preventDefault()
+    if (!panelExpanded) setPanelExpanded(true)
+  })
+
+  window.webContents.on('context-menu', (event) => {
+    event.preventDefault()
+    if (!panelExpanded) setPanelExpanded(true)
   })
 
   window.webContents.setWindowOpenHandler((details) => {

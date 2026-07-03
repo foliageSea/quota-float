@@ -138,6 +138,7 @@ onBeforeUnmount(() => {
       :style="{ background: ballProgress }"
       title="展开 Token Ball"
       @dblclick="setExpanded(true)"
+      @contextmenu.prevent="setExpanded(true)"
     >
       <span class="absolute inset-1 rounded-full bg-card/95" />
       <span class="relative flex flex-col items-center leading-none">
@@ -172,7 +173,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div class="flex-1 overflow-y-auto p-3">
+      <div class="panel-scroll flex-1 overflow-y-auto p-3">
         <div v-if="error" class="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
           <span>{{ error }}</span>
