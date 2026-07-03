@@ -34,9 +34,12 @@ const ballTone = computed(() => {
   return '#20c997'
 })
 
-const ballProgress = computed(() => {
-  const value = Math.min(100, Math.max(0, maxPercent.value))
-  return `conic-gradient(${ballTone.value} ${value * 3.6}deg, rgba(255,255,255,0.12) 0deg)`
+const usedPercent = computed(() => Math.min(100, Math.max(0, maxPercent.value)))
+
+const remainingPercent = computed(() => 100 - usedPercent.value)
+
+const waterLevel = computed(() => {
+  return `${remainingPercent.value}%`
 })
 
 function progressTone(value: number): 'good' | 'warn' | 'danger' {
@@ -134,21 +137,21 @@ onBeforeUnmount(() => {
   <main class="h-full w-full overflow-hidden p-1 text-foreground">
     <button
       v-if="!expanded"
-      class="drag-region relative flex h-[70px] w-[70px] items-center justify-center rounded-full border border-white/10 shadow-2xl shadow-black/40"
-      :style="{ background: ballProgress }"
+      class="drag-region token-reservoir relative flex h-[70px] w-[70px] items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
+      :style="{ '--water-level': waterLevel, '--water-color': ballTone }"
       title="展开 Token Ball"
       @dblclick="setExpanded(true)"
       @contextmenu.prevent="setExpanded(true)"
     >
-      <span class="absolute inset-1 rounded-full bg-card/95" />
-      <span class="relative flex flex-col items-center leading-none">
-        <span class="text-lg font-semibold">{{ maxPercent }}%</span>
-        <span class="mt-1 text-[10px] text-muted-foreground">5h max</span>
+      <span class="token-reservoir__glass absolute inset-0 rounded-full" />
+      <span class="token-reservoir__water absolute inset-x-0 bottom-0" />
+      <span class="token-reservoir__wave token-reservoir__wave--back absolute left-1/2" />
+      <span class="token-reservoir__wave token-reservoir__wave--front absolute left-1/2" />
+      <span class="token-reservoir__shine absolute rounded-full" />
+      <span class="relative z-10 flex flex-col items-center leading-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.55)]">
+        <span class="text-lg font-semibold text-white">{{ remainingPercent }}%</span>
+        <span class="mt-1 text-[10px] text-white/72">剩余</span>
       </span>
-      <span
-        class="absolute right-2 top-2 h-2.5 w-2.5 rounded-full"
-        :class="loading ? 'animate-pulse bg-warning' : error ? 'bg-destructive' : 'bg-primary'"
-      />
     </button>
 
     <section v-else class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
