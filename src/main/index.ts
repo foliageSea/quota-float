@@ -11,6 +11,12 @@ type AppConfig = {
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
   proxyPollIntervalSeconds: number
+  ballPosition: WindowPosition | null
+}
+
+type WindowPosition = {
+  x: number
+  y: number
 }
 
 type ApiGroup = {
@@ -97,8 +103,11 @@ const defaultConfig: AppConfig = {
   selectedGroupId: 'all',
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
-  proxyPollIntervalSeconds: 300
+  proxyPollIntervalSeconds: 300,
+  ballPosition: null
 }
+
+const collapsedSize = 78
 
 let mainWindow: BrowserWindow | null = null
 let ballWindow: BrowserWindow | null = null
@@ -125,11 +134,22 @@ function loadConfig(): AppConfig {
       selectedGroupId: saved.selectedGroupId ?? 'all',
       refreshIntervalSeconds: Math.max(15, Number(saved.refreshIntervalSeconds ?? 60) || 60),
       selectedProxyId: saved.selectedProxyId ?? 'none',
-      proxyPollIntervalSeconds: Math.max(15, Number(saved.proxyPollIntervalSeconds ?? 300) || 300)
+      proxyPollIntervalSeconds: Math.max(15, Number(saved.proxyPollIntervalSeconds ?? 300) || 300),
+      ballPosition: normalizeWindowPosition(saved.ballPosition)
     }
   } catch {
     return defaultConfig
   }
+}
+
+function normalizeWindowPosition(value: unknown): WindowPosition | null {
+  if (!value || typeof value !== 'object') return null
+
+  const position = value as Partial<WindowPosition>
+  if (typeof position.x !== 'number' || typeof position.y !== 'number') return null
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return null
+
+  return { x: Math.round(position.x), y: Math.round(position.y) }
 }
 
 function saveConfig(config: AppConfig): AppConfig {
@@ -139,7 +159,8 @@ function saveConfig(config: AppConfig): AppConfig {
     selectedGroupId: config.selectedGroupId,
     refreshIntervalSeconds: Math.max(15, Number(config.refreshIntervalSeconds) || 60),
     selectedProxyId: config.selectedProxyId,
-    proxyPollIntervalSeconds: Math.max(15, Number(config.proxyPollIntervalSeconds) || 300)
+    proxyPollIntervalSeconds: Math.max(15, Number(config.proxyPollIntervalSeconds) || 300),
+    ballPosition: normalizeWindowPosition(config.ballPosition)
   }
 
   writeFileSync(getConfigPath(), JSON.stringify(normalized, null, 2))
@@ -349,10 +370,58 @@ function loadRenderer(window: BrowserWindow, view: 'ball' | 'panel'): void {
   }
 }
 
+function clampPositionToWorkArea(position: WindowPosition, size = collapsedSize): WindowPosition {
+  const target = { x: position.x, y: position.y, width: size, height: size }
+  const { workArea } = screen.getDisplayMatching(target)
+  const maxX = workArea.x + workArea.width - size
+  const maxY = workArea.y + workArea.height - size
+
+  return {
+    x: Math.round(Math.min(Math.max(position.x, workArea.x), maxX)),
+    y: Math.round(Math.min(Math.max(position.y, workArea.y), maxY))
+  }
+}
+
+function getDefaultBallPosition(): WindowPosition {
+  const { workArea } = screen.getPrimaryDisplay()
+  return {
+    x: workArea.x + workArea.width - collapsedSize - 24,
+    y: workArea.y + workArea.height - collapsedSize - 64
+  }
+}
+
+function getSavedBallPosition(): WindowPosition {
+  return clampPositionToWorkArea(loadConfig().ballPosition ?? getDefaultBallPosition())
+}
+
+function updateBallPosition(position: WindowPosition): void {
+  const config = loadConfig()
+  saveConfig({ ...config, ballPosition: clampPositionToWorkArea(position) })
+}
+
+function saveCurrentBallPosition(): void {
+  if (!ballWindow || ballWindow.isDestroyed()) return
+  updateBallPosition(ballWindow.getBounds())
+}
+
+function resetBallPosition(): void {
+  if (!ballWindow) createBallWindow()
+  if (!ballWindow) return
+
+  const position = clampPositionToWorkArea(getDefaultBallPosition())
+  ballWindow.setPosition(position.x, position.y, false)
+  updateBallPosition(position)
+  if (panelWindow?.isVisible()) positionPanelNearBall()
+}
+
+function setFloatingWindowAlwaysOnTop(window: BrowserWindow | null, enabled: boolean): void {
+  if (!window || window.isDestroyed()) return
+  window.setAlwaysOnTop(enabled, 'screen-saver')
+}
+
 function positionPanelNearBall(): void {
   if (!ballWindow || !panelWindow) return
 
-  const collapsedSize = 78
   const expandedSize = { width: 390, height: 580 }
   const bounds = ballWindow.getBounds()
   const { workArea } = screen.getDisplayMatching(bounds)
@@ -419,6 +488,7 @@ function stopCollapsedWindowDrag(): void {
   if (collapsedDragTimer) clearInterval(collapsedDragTimer)
   collapsedDragTimer = null
   collapsedDragOffset = null
+  saveCurrentBallPosition()
 }
 
 function openPanel(): void {
@@ -428,6 +498,7 @@ function openPanel(): void {
 function createAppMenu(): Electron.Menu {
   return Menu.buildFromTemplate([
     { label: '打开面板', click: openPanel },
+    { label: '重置悬浮球位置', click: resetBallPosition },
     { type: 'separator' },
     { label: '退出', click: () => app.quit() }
   ])
@@ -456,9 +527,13 @@ function attachWindowHandlers(window: BrowserWindow): void {
 function createBallWindow(): void {
   if (ballWindow && !ballWindow.isDestroyed()) return
 
+  const position = getSavedBallPosition()
+
   const window = new BrowserWindow({
     width: 78,
     height: 78,
+    x: position.x,
+    y: position.y,
     minWidth: 78,
     minHeight: 78,
     show: false,
@@ -477,6 +552,7 @@ function createBallWindow(): void {
   })
   ballWindow = window
   mainWindow = window
+  setFloatingWindowAlwaysOnTop(window, true)
 
   window.on('ready-to-show', () => {
     window.show()
@@ -514,6 +590,7 @@ function createPanelWindow(): void {
     }
   })
   panelWindow = window
+  setFloatingWindowAlwaysOnTop(window, true)
 
   window.on('ready-to-show', () => {
     sendPanelVisibilityChanged()
@@ -566,8 +643,8 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('window:stop-collapsed-drag', () => stopCollapsedWindowDrag())
   ipcMain.handle('window:set-always-on-top', (_, enabled: boolean) => {
-    ballWindow?.setAlwaysOnTop(enabled)
-    panelWindow?.setAlwaysOnTop(enabled)
+    setFloatingWindowAlwaysOnTop(ballWindow, enabled)
+    setFloatingWindowAlwaysOnTop(panelWindow, enabled)
   })
 
   if (process.platform === 'darwin') app.dock?.hide()

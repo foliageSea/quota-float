@@ -8,6 +8,7 @@ export type AppConfig = {
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
   proxyPollIntervalSeconds: number
+  ballPosition: { x: number; y: number } | null
 }
 
 export type ApiGroup = {

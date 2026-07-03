@@ -20,7 +20,8 @@ const defaultConfig: AppConfig = {
   selectedGroupId: 'all',
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
-  proxyPollIntervalSeconds: 300
+  proxyPollIntervalSeconds: 300,
+  ballPosition: null
 }
 
 const view = new URLSearchParams(window.location.search).get('view') === 'panel' ? 'panel' : 'ball'
@@ -238,7 +239,8 @@ async function save(): Promise<void> {
       refreshIntervalSeconds: refreshIntervalInput.value || 60,
       selectedProxyId:
         config.value.selectedProxyId === 'none' ? 'none' : Number(config.value.selectedProxyId),
-      proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300
+      proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300,
+      ballPosition: config.value.ballPosition
     })
     refreshIntervalInput.value = config.value.refreshIntervalSeconds
     proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
