@@ -64,11 +64,12 @@ const defaultConfig: AppConfig = {
 }
 
 let mainWindow: BrowserWindow | null = null
+let ballWindow: BrowserWindow | null = null
+let panelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
-let panelExpanded = false
-let collapsedPosition: { x: number; y: number } | null = null
 let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
 let collapsedDragOffset: { x: number; y: number } | null = null
+let latestUsageSnapshot: Awaited<ReturnType<typeof refreshUsage>> | null = null
 
 function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -228,72 +229,105 @@ async function refreshUsage(): Promise<{
   }
 }
 
-function setPanelExpanded(expanded: boolean): void {
-  if (!mainWindow) return
-  if (expanded) stopCollapsedWindowDrag()
+function sendPanelVisibilityChanged(): void {
+  const visible = panelWindow?.isVisible() ?? false
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('window:panel-visibility-changed', visible)
+  })
+}
+
+function broadcastUsageSnapshot(snapshot: Awaited<ReturnType<typeof refreshUsage>>): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('usage:updated', snapshot)
+  })
+}
+
+async function refreshUsageSnapshot(): Promise<Awaited<ReturnType<typeof refreshUsage>>> {
+  latestUsageSnapshot = await refreshUsage()
+  broadcastUsageSnapshot(latestUsageSnapshot)
+  return latestUsageSnapshot
+}
+
+function getRendererUrl(view: 'ball' | 'panel'): string {
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+  if (!rendererUrl) return ''
+
+  const url = new URL(rendererUrl)
+  url.searchParams.set('view', view)
+  return url.toString()
+}
+
+function loadRenderer(window: BrowserWindow, view: 'ball' | 'panel'): void {
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    window.loadURL(getRendererUrl(view))
+  } else {
+    window.loadFile(join(__dirname, '../renderer/index.html'), { query: { view } })
+  }
+}
+
+function positionPanelNearBall(): void {
+  if (!ballWindow || !panelWindow) return
+
   const collapsedSize = 78
   const expandedSize = { width: 390, height: 580 }
+  const bounds = ballWindow.getBounds()
+  const { workArea } = screen.getDisplayMatching(bounds)
+  const ballCenterX = bounds.x + collapsedSize / 2
+  const aboveBallY = bounds.y - expandedSize.height - 8
+  const belowBallY = bounds.y + collapsedSize + 8
+  const minX = workArea.x
+  const maxX = workArea.x + workArea.width - expandedSize.width
+  const minY = workArea.y
+  const maxY = workArea.y + workArea.height - expandedSize.height
+  const x = Math.round(Math.min(Math.max(ballCenterX - expandedSize.width / 2, minX), maxX))
+  const preferredY = aboveBallY >= minY ? aboveBallY : belowBallY
+  const y = Math.round(Math.min(Math.max(preferredY, minY), maxY))
 
-  if (expanded && !panelExpanded) {
-    const bounds = mainWindow.getBounds()
-    collapsedPosition = { x: bounds.x, y: bounds.y }
-    const { workArea } = screen.getDisplayMatching(bounds)
-    const ballCenterX = bounds.x + bounds.width / 2
-    const aboveBallY = bounds.y - expandedSize.height - 8
-    const minX = workArea.x
-    const maxX = workArea.x + workArea.width - expandedSize.width
-    const minY = workArea.y
-    const maxY = workArea.y + workArea.height - expandedSize.height
-    const x = Math.round(Math.min(Math.max(ballCenterX - expandedSize.width / 2, minX), maxX))
-    const y = Math.round(Math.min(Math.max(aboveBallY, minY), maxY))
+  panelWindow.setBounds({ x, y, ...expandedSize }, true)
+}
 
-    panelExpanded = true
-    mainWindow.setResizable(true)
-    mainWindow.setMinimumSize(360, 480)
-    mainWindow.setBounds({ x, y, ...expandedSize }, true)
-    mainWindow.setResizable(false)
-    mainWindow.webContents.send('window:expanded-changed', panelExpanded)
-    return
-  }
+function showPanel(): void {
+  if (!ballWindow) createBallWindow()
+  if (!panelWindow) createPanelWindow()
+  if (!panelWindow) return
 
-  if (!expanded && panelExpanded) {
-    const position = collapsedPosition ?? mainWindow.getBounds()
+  stopCollapsedWindowDrag()
+  positionPanelNearBall()
+  panelWindow.show()
+  panelWindow.focus()
+  sendPanelVisibilityChanged()
+}
 
-    panelExpanded = false
-    mainWindow.setResizable(true)
-    mainWindow.setMinimumSize(collapsedSize, collapsedSize)
-    mainWindow.setBounds({ x: position.x, y: position.y, width: collapsedSize, height: collapsedSize }, true)
-    mainWindow.setResizable(false)
-    mainWindow.webContents.send('window:expanded-changed', panelExpanded)
-    return
-  }
+function hidePanel(): void {
+  panelWindow?.hide()
+  sendPanelVisibilityChanged()
+}
 
-  panelExpanded = expanded
-  mainWindow.setResizable(true)
-  mainWindow.setSize(expanded ? expandedSize.width : collapsedSize, expanded ? expandedSize.height : collapsedSize, true)
-  mainWindow.setMinimumSize(expanded ? 360 : collapsedSize, expanded ? 480 : collapsedSize)
-  mainWindow.setResizable(false)
-  mainWindow.webContents.send('window:expanded-changed', panelExpanded)
+function setPanelExpanded(expanded: boolean): void {
+  if (expanded) showPanel()
+  else hidePanel()
 }
 
 function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
-  if (!mainWindow || panelExpanded) return
-  const bounds = mainWindow.getBounds()
+  if (!ballWindow) return
+  const bounds = ballWindow.getBounds()
   collapsedDragOffset = { x: cursorX - bounds.x, y: cursorY - bounds.y }
   if (collapsedDragTimer) clearInterval(collapsedDragTimer)
 
   collapsedDragTimer = setInterval(() => {
-    if (!mainWindow || !collapsedDragOffset || panelExpanded) {
+    if (!ballWindow || !collapsedDragOffset) {
       stopCollapsedWindowDrag()
       return
     }
 
     const point = screen.getCursorScreenPoint()
-    mainWindow.setPosition(
+    ballWindow.setPosition(
       Math.round(point.x - collapsedDragOffset.x),
       Math.round(point.y - collapsedDragOffset.y),
       false
     )
+
+    if (panelWindow?.isVisible()) positionPanelNearBall()
   }, 16)
 }
 
@@ -304,12 +338,7 @@ function stopCollapsedWindowDrag(): void {
 }
 
 function openPanel(): void {
-  if (!mainWindow) createWindow()
-  if (!mainWindow) return
-
-  mainWindow.show()
-  setPanelExpanded(true)
-  mainWindow.focus()
+  showPanel()
 }
 
 function createAppMenu(): Electron.Menu {
@@ -321,7 +350,7 @@ function createAppMenu(): Electron.Menu {
 }
 
 function showAppMenu(): void {
-  createAppMenu().popup({ window: mainWindow ?? undefined })
+  createAppMenu().popup({ window: ballWindow ?? panelWindow ?? undefined })
 }
 
 function createTray(): void {
@@ -333,7 +362,16 @@ function createTray(): void {
   tray.on('right-click', showAppMenu)
 }
 
-function createWindow(): void {
+function attachWindowHandlers(window: BrowserWindow): void {
+  window.webContents.setWindowOpenHandler((details) => {
+    shell.openExternal(details.url)
+    return { action: 'deny' }
+  })
+}
+
+function createBallWindow(): void {
+  if (ballWindow && !ballWindow.isDestroyed()) return
+
   const window = new BrowserWindow({
     width: 78,
     height: 78,
@@ -353,24 +391,65 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  ballWindow = window
   mainWindow = window
 
   window.on('ready-to-show', () => {
     window.show()
   })
 
-  window.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
+  window.on('closed', () => {
+    ballWindow = null
+    if (mainWindow === window) mainWindow = panelWindow
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    window.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  attachWindowHandlers(window)
+  loadRenderer(window, 'ball')
+}
+
+function createPanelWindow(): void {
+  if (panelWindow && !panelWindow.isDestroyed()) return
+
+  const window = new BrowserWindow({
+    width: 390,
+    height: 580,
+    minWidth: 360,
+    minHeight: 480,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    hasShadow: true,
+    ...(process.platform === 'linux' ? { icon } : {}),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+  panelWindow = window
+
+  window.on('ready-to-show', () => {
+    sendPanelVisibilityChanged()
+  })
+
+  window.on('hide', sendPanelVisibilityChanged)
+  window.on('show', sendPanelVisibilityChanged)
+
+  window.on('closed', () => {
+    panelWindow = null
+    if (mainWindow === window) mainWindow = ballWindow
+    sendPanelVisibilityChanged()
+  })
+
+  attachWindowHandlers(window)
+  loadRenderer(window, 'panel')
+}
+
+function createWindow(): void {
+  createBallWindow()
 }
 
 // This method will be called when Electron has finished
@@ -390,15 +469,19 @@ app.whenReady().then(() => {
   ipcMain.handle('config:get', () => loadConfig())
   ipcMain.handle('config:save', (_, config: AppConfig) => saveConfig(config))
   ipcMain.handle('groups:get', () => getGroups())
-  ipcMain.handle('usage:refresh', () => refreshUsage())
+  ipcMain.handle('usage:get-latest', () => latestUsageSnapshot)
+  ipcMain.handle('usage:refresh', () => refreshUsageSnapshot())
   ipcMain.handle('window:show-menu', () => showAppMenu())
+  ipcMain.handle('window:show-panel', () => showPanel())
+  ipcMain.handle('window:hide-panel', () => hidePanel())
   ipcMain.handle('window:set-expanded', (_, expanded: boolean) => setPanelExpanded(expanded))
   ipcMain.handle('window:start-collapsed-drag', (_, cursorX: number, cursorY: number) =>
     startCollapsedWindowDrag(cursorX, cursorY)
   )
   ipcMain.handle('window:stop-collapsed-drag', () => stopCollapsedWindowDrag())
   ipcMain.handle('window:set-always-on-top', (_, enabled: boolean) => {
-    mainWindow?.setAlwaysOnTop(enabled)
+    ballWindow?.setAlwaysOnTop(enabled)
+    panelWindow?.setAlwaysOnTop(enabled)
   })
 
   if (process.platform === 'darwin') app.dock?.hide()

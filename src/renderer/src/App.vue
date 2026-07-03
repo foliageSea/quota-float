@@ -13,7 +13,10 @@ const defaultConfig: AppConfig = {
   refreshIntervalSeconds: 60
 }
 
-const expanded = ref(false)
+const view = new URLSearchParams(window.location.search).get('view') === 'panel' ? 'panel' : 'ball'
+const isBallView = view === 'ball'
+const isPanelView = view === 'panel'
+const panelVisible = ref(false)
 const showSettings = ref(false)
 const loading = ref(false)
 const saving = ref(false)
@@ -27,7 +30,8 @@ let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
 let didDragBall = false
-let removePanelExpandedListener: (() => void) | undefined
+let removePanelVisibilityListener: (() => void) | undefined
+let removeUsageUpdatedListener: (() => void) | undefined
 
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
@@ -76,8 +80,9 @@ function accountLabel(account: UsageAccount): string {
 }
 
 async function setExpanded(value: boolean): Promise<void> {
-  expanded.value = value
-  await window.api.setPanelExpanded(value)
+  panelVisible.value = value
+  if (value) await window.api.showPanel()
+  else await window.api.hidePanel()
 }
 
 function startBallDrag(event: PointerEvent): void {
@@ -104,8 +109,17 @@ function stopBallDrag(event: PointerEvent): void {
 }
 
 function toggleBallMetric(): void {
-  if (didDragBall) return
   ballMetric.value = ballMetric.value === 'fiveHour' ? 'sevenDay' : 'fiveHour'
+}
+
+function openPanelFromBall(): void {
+  if (didDragBall) return
+  if (panelVisible.value) {
+    void setExpanded(false)
+    return
+  }
+
+  toggleBallMetric()
 }
 
 function showWindowMenu(): void {
@@ -153,6 +167,7 @@ async function save(): Promise<void> {
 }
 
 function resetTimer(): void {
+  if (!isPanelView) return
   if (refreshTimer) window.clearInterval(refreshTimer)
   const interval = Math.max(15, config.value.refreshIntervalSeconds) * 1000
   refreshTimer = window.setInterval(refresh, interval)
@@ -164,48 +179,58 @@ watch(
 )
 
 onMounted(async () => {
-  removePanelExpandedListener = window.api.onPanelExpandedChanged((value) => {
-    expanded.value = value
+  removePanelVisibilityListener = window.api.onPanelVisibilityChanged((value) => {
+    panelVisible.value = value
+  })
+  removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
+    snapshot.value = value
   })
   config.value = await window.api.getConfig()
   refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
   showSettings.value = !config.value.baseUrl || !config.value.adminApiKey
-  await refresh()
+  snapshot.value = await window.api.getLatestUsage()
+  if (isPanelView || !snapshot.value) await refresh()
   resetTimer()
 })
 
 onBeforeUnmount(() => {
-  removePanelExpandedListener?.()
+  removePanelVisibilityListener?.()
+  removeUsageUpdatedListener?.()
   if (refreshTimer) window.clearInterval(refreshTimer)
 })
 </script>
 
 <template>
   <main class="h-full w-full overflow-hidden p-1 text-foreground">
-    <button
-      v-if="!expanded"
-      class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
-      :style="{ '--water-level': waterLevel, '--water-color': ballTone }"
-      :title="`切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}`"
-      @click="toggleBallMetric"
-      @pointerdown="startBallDrag"
-      @pointermove="trackBallDrag"
-      @pointerup="stopBallDrag"
-      @pointercancel="stopBallDrag"
-      @contextmenu.prevent="showWindowMenu"
-    >
-      <span class="token-reservoir__glass absolute inset-0 rounded-full" />
-      <span class="token-reservoir__water absolute inset-x-0 bottom-0" />
-      <span class="token-reservoir__wave token-reservoir__wave--back absolute left-1/2" />
-      <span class="token-reservoir__wave token-reservoir__wave--front absolute left-1/2" />
-      <span class="token-reservoir__shine absolute rounded-full" />
-      <span class="relative z-10 flex flex-col items-center leading-none drop-shadow-[0_1px_4px_rgba(0,0,0,0.55)]">
-        <span class="text-lg font-semibold text-white">{{ remainingPercent }}%</span>
-        <span class="mt-1 text-[10px] text-white/72">{{ ballMetricLabel }}</span>
-      </span>
-    </button>
+    <div v-if="isBallView" class="relative h-[70px] w-[70px]">
+      <button
+        class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
+        :style="{ '--water-level': waterLevel, '--water-color': ballTone, '--remaining-percent': `${remainingPercent}%` }"
+        :title="panelVisible ? '隐藏面板' : `切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}`"
+        @click="openPanelFromBall"
+        @pointerdown="startBallDrag"
+        @pointermove="trackBallDrag"
+        @pointerup="stopBallDrag"
+        @pointercancel="stopBallDrag"
+        @contextmenu.prevent="showWindowMenu"
+      >
+        <span class="token-reservoir__track absolute inset-1 rounded-full" />
+        <span class="token-reservoir__center absolute inset-[7px] rounded-full" />
+        <span class="relative z-10 flex flex-col items-center leading-none">
+          <span class="text-lg font-semibold text-white">{{ remainingPercent }}%</span>
+          <span class="mt-1 text-[10px] font-medium text-white/64">{{ ballMetricLabel }}</span>
+        </span>
+      </button>
+      <button
+        class="absolute bottom-0 right-0 z-20 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 text-[9px] font-semibold text-white shadow-lg no-drag"
+        title="打开面板"
+        @click.stop="setExpanded(true)"
+      >
+        P
+      </button>
+    </div>
 
-    <section v-else class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
+    <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
       <header class="drag-region flex h-12 items-center justify-between border-b border-border px-3">
         <div class="min-w-0">
           <div class="text-sm font-semibold leading-4">Token Ball</div>
