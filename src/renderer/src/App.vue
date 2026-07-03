@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, ChevronUp, RefreshCw, Save, Settings, Wifi, X } from '@lucide/vue'
+import { AlertCircle, ChevronDown, RefreshCw, Save, Wifi } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput
+} from './components/ui/number-field'
 import Progress from './components/ui/Progress.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
 import type { ApiProxy, AppConfig, UsageAccount, UsageSnapshot, ProxySnapshot } from '../../preload/index'
 
 const defaultConfig: AppConfig = {
@@ -18,14 +26,15 @@ const defaultConfig: AppConfig = {
 const view = new URLSearchParams(window.location.search).get('view') === 'panel' ? 'panel' : 'ball'
 const isBallView = view === 'ball'
 const isPanelView = view === 'panel'
+type PanelTab = 'usage' | 'proxy' | 'settings'
 const panelVisible = ref(false)
-const showSettings = ref(false)
+const activePanelTab = ref<PanelTab>('usage')
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const config = ref<AppConfig>({ ...defaultConfig })
-const refreshIntervalInput = ref(String(defaultConfig.refreshIntervalSeconds))
-const proxyPollIntervalInput = ref(String(defaultConfig.proxyPollIntervalSeconds))
+const refreshIntervalInput = ref(defaultConfig.refreshIntervalSeconds)
+const proxyPollIntervalInput = ref(defaultConfig.proxyPollIntervalSeconds)
 const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
@@ -177,7 +186,7 @@ function showWindowMenu(): void {
 async function refresh(): Promise<void> {
   if (!config.value.baseUrl || !config.value.adminApiKey) {
     error.value = '请先完成 Sub2API 配置'
-    showSettings.value = true
+    activePanelTab.value = 'settings'
     return
   }
 
@@ -190,6 +199,20 @@ async function refresh(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+async function refreshActiveTab(): Promise<void> {
+  if (activePanelTab.value === 'proxy') {
+    await refreshProxy()
+    return
+  }
+
+  if (activePanelTab.value === 'settings') {
+    await Promise.all([refresh(), refreshProxy()])
+    return
+  }
+
+  await refresh()
 }
 
 async function refreshProxy(): Promise<void> {
@@ -212,14 +235,14 @@ async function save(): Promise<void> {
       baseUrl: config.value.baseUrl,
       adminApiKey: config.value.adminApiKey,
       selectedGroupId,
-      refreshIntervalSeconds: Number(refreshIntervalInput.value) || 60,
+      refreshIntervalSeconds: refreshIntervalInput.value || 60,
       selectedProxyId:
         config.value.selectedProxyId === 'none' ? 'none' : Number(config.value.selectedProxyId),
-      proxyPollIntervalSeconds: Number(proxyPollIntervalInput.value) || 300
+      proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300
     })
-    refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
-    proxyPollIntervalInput.value = String(config.value.proxyPollIntervalSeconds)
-    showSettings.value = false
+    refreshIntervalInput.value = config.value.refreshIntervalSeconds
+    proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
+    activePanelTab.value = 'usage'
     await Promise.all([refresh(), refreshProxy()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : '保存失败'
@@ -262,9 +285,9 @@ onMounted(async () => {
     proxySnapshot.value = value
   })
   config.value = await window.api.getConfig()
-  refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
-  proxyPollIntervalInput.value = String(config.value.proxyPollIntervalSeconds)
-  showSettings.value = !config.value.baseUrl || !config.value.adminApiKey
+  refreshIntervalInput.value = config.value.refreshIntervalSeconds
+  proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
+  if (!config.value.baseUrl || !config.value.adminApiKey) activePanelTab.value = 'settings'
   snapshot.value = await window.api.getLatestUsage()
   proxySnapshot.value = await window.api.getLatestProxy()
   if (isPanelView || !snapshot.value) await Promise.all([refresh(), refreshProxy()])
@@ -302,15 +325,8 @@ onBeforeUnmount(() => {
           <span class="mt-1 text-[10px] font-medium text-white/64">{{ ballMetricLabel }}</span>
         </span>
       </button>
-      <button
-        class="absolute bottom-0 right-0 z-20 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 text-[9px] font-semibold text-white shadow-lg no-drag"
-        title="打开面板"
-        @click.stop="setExpanded(true)"
-      >
-        P
-      </button>
       <div
-        class="absolute left-0 top-0 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
+        class="absolute bottom-0 right-0 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
         :style="{ color: proxyStatusTone }"
         :title="proxyStatusTitle"
       >
@@ -325,20 +341,38 @@ onBeforeUnmount(() => {
           <div class="text-[11px] text-muted-foreground">{{ accountCount }} accounts</div>
         </div>
         <div class="no-drag flex items-center gap-1">
-          <Button variant="ghost" size="icon" title="刷新" :disabled="loading" @click="refresh">
+          <Button variant="ghost" size="icon" title="刷新" :disabled="loading" @click="refreshActiveTab">
             <RefreshCw class="h-4 w-4" :class="loading && 'animate-spin'" />
-          </Button>
-          <Button variant="ghost" size="icon" title="设置" @click="showSettings = !showSettings">
-            <Settings class="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="icon" title="收起" @click="setExpanded(false)">
             <ChevronDown class="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" title="关闭面板" @click="setExpanded(false)">
-            <X class="h-4 w-4" />
-          </Button>
         </div>
       </header>
+
+      <nav class="grid grid-cols-3 gap-1 border-b border-border p-2">
+        <button
+          class="no-drag h-8 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          :class="activePanelTab === 'usage' && 'bg-muted text-foreground'"
+          @click="activePanelTab = 'usage'"
+        >
+          用量
+        </button>
+        <button
+          class="no-drag h-8 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          :class="activePanelTab === 'proxy' && 'bg-muted text-foreground'"
+          @click="activePanelTab = 'proxy'"
+        >
+          代理
+        </button>
+        <button
+          class="no-drag h-8 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          :class="activePanelTab === 'settings' && 'bg-muted text-foreground'"
+          @click="activePanelTab = 'settings'"
+        >
+          设置
+        </button>
+      </nav>
 
       <div class="panel-scroll flex-1 overflow-y-auto p-3">
         <div v-if="error" class="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -346,7 +380,7 @@ onBeforeUnmount(() => {
           <span>{{ error }}</span>
         </div>
 
-        <form v-if="showSettings" class="mb-3 space-y-3 rounded-md border border-border bg-background/55 p-3" @submit.prevent="save">
+        <form v-if="activePanelTab === 'settings'" class="space-y-3 rounded-md border border-border bg-background/55 p-3" @submit.prevent="save">
           <label class="block space-y-1">
             <span class="text-xs text-muted-foreground">Sub2API 地址</span>
             <Input v-model="config.baseUrl" placeholder="http://127.0.0.1:37889" />
@@ -355,32 +389,56 @@ onBeforeUnmount(() => {
             <span class="text-xs text-muted-foreground">管理员 API Key</span>
             <Input v-model="config.adminApiKey" type="password" placeholder="admin-..." />
           </label>
-          <div class="grid grid-cols-[1fr_96px] gap-2">
+          <div class="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">统计分组</span>
-              <select v-model="config.selectedGroupId" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
-                <option value="all">全部分组</option>
-                <option v-for="group in groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-              </select>
+              <Select v-model="config.selectedGroupId">
+                <SelectTrigger>
+                  <SelectValue placeholder="全部分组" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部分组</SelectItem>
+                  <SelectItem v-for="group in groups" :key="group.id" :value="group.id">
+                    {{ group.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </label>
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">刷新秒</span>
-              <Input v-model="refreshIntervalInput" type="number" />
+              <NumberField v-model="refreshIntervalInput" :min="15" :step="15">
+                <NumberFieldContent>
+                  <NumberFieldDecrement />
+                  <NumberFieldInput />
+                  <NumberFieldIncrement />
+                </NumberFieldContent>
+              </NumberField>
             </label>
           </div>
-          <div class="grid grid-cols-[1fr_96px] gap-2">
+          <div class="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">监控代理</span>
-              <select v-model="config.selectedProxyId" class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring">
-                <option value="none">不监控代理</option>
-                <option v-for="proxy in proxies" :key="proxy.id" :value="proxy.id">
-                  {{ proxy.name }} · {{ proxy.host }}:{{ proxy.port }}
-                </option>
-              </select>
+              <Select v-model="config.selectedProxyId">
+                <SelectTrigger>
+                  <SelectValue placeholder="不监控代理" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不监控代理</SelectItem>
+                  <SelectItem v-for="proxy in proxies" :key="proxy.id" :value="proxy.id">
+                    {{ proxy.name }} · {{ proxy.host }}:{{ proxy.port }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </label>
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">代理秒</span>
-              <Input v-model="proxyPollIntervalInput" type="number" />
+              <NumberField v-model="proxyPollIntervalInput" :min="15" :step="15">
+                <NumberFieldContent>
+                  <NumberFieldDecrement />
+                  <NumberFieldInput />
+                  <NumberFieldIncrement />
+                </NumberFieldContent>
+              </NumberField>
             </label>
           </div>
           <Button type="submit" class="w-full" :disabled="saving">
@@ -389,7 +447,7 @@ onBeforeUnmount(() => {
           </Button>
         </form>
 
-        <section class="mb-3 rounded-md border border-border bg-background/55 p-3">
+        <section v-if="activePanelTab === 'proxy'" class="rounded-md border border-border bg-background/55 p-3">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -424,61 +482,59 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <div class="grid grid-cols-2 gap-2">
-          <div class="rounded-md border border-border bg-background/55 p-3">
-            <div class="text-xs text-muted-foreground">5h 平均 / 最高</div>
-            <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.fiveHourAverage ?? 0 }}% / {{ snapshot?.summary.fiveHourMax ?? 0 }}%</div>
-            <Progress class="mt-2" :value="snapshot?.summary.fiveHourMax ?? 0" :tone="progressTone(snapshot?.summary.fiveHourMax ?? 0)" />
+        <div v-if="activePanelTab === 'usage'">
+          <div class="grid grid-cols-2 gap-2">
+            <div class="rounded-md border border-border bg-background/55 p-3">
+              <div class="text-xs text-muted-foreground">5h 平均 / 最高</div>
+              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.fiveHourAverage ?? 0 }}% / {{ snapshot?.summary.fiveHourMax ?? 0 }}%</div>
+              <Progress class="mt-2" :value="snapshot?.summary.fiveHourMax ?? 0" :tone="progressTone(snapshot?.summary.fiveHourMax ?? 0)" />
+            </div>
+            <div class="rounded-md border border-border bg-background/55 p-3">
+              <div class="text-xs text-muted-foreground">7d 平均 / 最高</div>
+              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.sevenDayAverage ?? 0 }}% / {{ snapshot?.summary.sevenDayMax ?? 0 }}%</div>
+              <Progress class="mt-2" :value="snapshot?.summary.sevenDayMax ?? 0" :tone="progressTone(snapshot?.summary.sevenDayMax ?? 0)" />
+            </div>
           </div>
-          <div class="rounded-md border border-border bg-background/55 p-3">
-            <div class="text-xs text-muted-foreground">7d 平均 / 最高</div>
-            <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.sevenDayAverage ?? 0 }}% / {{ snapshot?.summary.sevenDayMax ?? 0 }}%</div>
-            <Progress class="mt-2" :value="snapshot?.summary.sevenDayMax ?? 0" :tone="progressTone(snapshot?.summary.sevenDayMax ?? 0)" />
-          </div>
-        </div>
 
-        <div class="mt-3 space-y-2">
-          <article v-for="account in snapshot?.accounts ?? []" :key="account.id" class="rounded-md border border-border bg-background/55 p-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="truncate text-sm font-medium">{{ account.name }}</div>
-                <div class="truncate text-xs text-muted-foreground">{{ accountLabel(account) }}</div>
-              </div>
-              <span class="rounded bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">{{ account.status }}</span>
-            </div>
-            <div class="mt-3 grid gap-3">
-              <div>
-                <div class="mb-1 flex justify-between text-xs">
-                  <span class="text-muted-foreground">5h</span>
-                  <span>{{ account.fiveHourPercent }}% · {{ formatDate(account.fiveHourResetAt) }}</span>
+          <div class="mt-3 space-y-2">
+            <article v-for="account in snapshot?.accounts ?? []" :key="account.id" class="rounded-md border border-border bg-background/55 p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-medium">{{ account.name }}</div>
+                  <div class="truncate text-xs text-muted-foreground">{{ accountLabel(account) }}</div>
                 </div>
-                <Progress :value="account.fiveHourPercent" :tone="progressTone(account.fiveHourPercent)" />
+                <span class="rounded bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">{{ account.status }}</span>
               </div>
-              <div>
-                <div class="mb-1 flex justify-between text-xs">
-                  <span class="text-muted-foreground">7d</span>
-                  <span>{{ account.sevenDayPercent }}% · {{ formatDate(account.sevenDayResetAt) }}</span>
+              <div class="mt-3 grid gap-3">
+                <div>
+                  <div class="mb-1 flex justify-between text-xs">
+                    <span class="text-muted-foreground">5h</span>
+                    <span>{{ account.fiveHourPercent }}% · {{ formatDate(account.fiveHourResetAt) }}</span>
+                  </div>
+                  <Progress :value="account.fiveHourPercent" :tone="progressTone(account.fiveHourPercent)" />
                 </div>
-                <Progress :value="account.sevenDayPercent" :tone="progressTone(account.sevenDayPercent)" />
+                <div>
+                  <div class="mb-1 flex justify-between text-xs">
+                    <span class="text-muted-foreground">7d</span>
+                    <span>{{ account.sevenDayPercent }}% · {{ formatDate(account.sevenDayResetAt) }}</span>
+                  </div>
+                  <Progress :value="account.sevenDayPercent" :tone="progressTone(account.sevenDayPercent)" />
+                </div>
               </div>
-            </div>
-            <div class="mt-2 truncate text-[11px] text-muted-foreground">
-              {{ account.groupNames.join(' / ') || '无分组' }} · 更新 {{ formatDate(account.updatedAt) }}
-            </div>
-          </article>
+              <div class="mt-2 truncate text-[11px] text-muted-foreground">
+                {{ account.groupNames.join(' / ') || '无分组' }} · 更新 {{ formatDate(account.updatedAt) }}
+              </div>
+            </article>
 
-          <div v-if="snapshot && snapshot.accounts.length === 0" class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            当前分组没有账号
+            <div v-if="snapshot && snapshot.accounts.length === 0" class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              当前分组没有账号
+            </div>
           </div>
         </div>
       </div>
 
-      <footer class="flex h-10 items-center justify-between border-t border-border px-3 text-[11px] text-muted-foreground">
+      <footer class="flex h-10 items-center border-t border-border px-3 text-[11px] text-muted-foreground">
         <span>更新 {{ formatDate(snapshot?.updatedAt ?? '') }}</span>
-        <button class="no-drag inline-flex items-center gap-1 hover:text-foreground" @click="setExpanded(false)">
-          <ChevronUp class="h-3.5 w-3.5" />
-          悬浮球
-        </button>
       </footer>
     </section>
   </main>
