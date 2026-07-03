@@ -24,18 +24,18 @@ const snapshot = ref<UsageSnapshot | null>(null)
 let refreshTimer: number | undefined
 let dragPointerId: number | null = null
 
-const maxPercent = computed(() => snapshot.value?.summary.fiveHourMax ?? 0)
+const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
 const groups = computed(() => snapshot.value?.groups ?? [])
 
 const ballTone = computed(() => {
   if (error.value) return '#ff5d5d'
-  if (maxPercent.value >= 90) return '#ff5d5d'
-  if (maxPercent.value >= 70) return '#f0b84b'
+  if (fiveHourAveragePercent.value >= 90) return '#ff5d5d'
+  if (fiveHourAveragePercent.value >= 70) return '#f0b84b'
   return '#20c997'
 })
 
-const usedPercent = computed(() => Math.min(100, Math.max(0, maxPercent.value)))
+const usedPercent = computed(() => Math.min(100, Math.max(0, fiveHourAveragePercent.value)))
 
 const remainingPercent = computed(() => 100 - usedPercent.value)
 
