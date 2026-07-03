@@ -52,6 +52,12 @@ const api = {
   saveConfig: (config: unknown) => ipcRenderer.invoke('config:save', config),
   getGroups: () => ipcRenderer.invoke('groups:get'),
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
+  showWindowMenu: () => ipcRenderer.invoke('window:show-menu'),
+  onPanelExpandedChanged: (callback: (expanded: boolean) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, expanded: boolean): void => callback(expanded)
+    ipcRenderer.on('window:expanded-changed', listener)
+    return () => ipcRenderer.removeListener('window:expanded-changed', listener)
+  },
   setPanelExpanded: (expanded: boolean) => ipcRenderer.invoke('window:set-expanded', expanded),
   startCollapsedWindowDrag: (cursorX: number, cursorY: number) =>
     ipcRenderer.invoke('window:start-collapsed-drag', cursorX, cursorY),

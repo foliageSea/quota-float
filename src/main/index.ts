@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, Menu, Tray } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -64,6 +64,7 @@ const defaultConfig: AppConfig = {
 }
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 let panelExpanded = false
 let collapsedPosition: { x: number; y: number } | null = null
 let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
@@ -251,6 +252,7 @@ function setPanelExpanded(expanded: boolean): void {
     mainWindow.setMinimumSize(360, 480)
     mainWindow.setBounds({ x, y, ...expandedSize }, true)
     mainWindow.setResizable(false)
+    mainWindow.webContents.send('window:expanded-changed', panelExpanded)
     return
   }
 
@@ -262,6 +264,7 @@ function setPanelExpanded(expanded: boolean): void {
     mainWindow.setMinimumSize(collapsedSize, collapsedSize)
     mainWindow.setBounds({ x: position.x, y: position.y, width: collapsedSize, height: collapsedSize }, true)
     mainWindow.setResizable(false)
+    mainWindow.webContents.send('window:expanded-changed', panelExpanded)
     return
   }
 
@@ -270,6 +273,7 @@ function setPanelExpanded(expanded: boolean): void {
   mainWindow.setSize(expanded ? expandedSize.width : collapsedSize, expanded ? expandedSize.height : collapsedSize, true)
   mainWindow.setMinimumSize(expanded ? 360 : collapsedSize, expanded ? 480 : collapsedSize)
   mainWindow.setResizable(false)
+  mainWindow.webContents.send('window:expanded-changed', panelExpanded)
 }
 
 function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
@@ -299,6 +303,36 @@ function stopCollapsedWindowDrag(): void {
   collapsedDragOffset = null
 }
 
+function openPanel(): void {
+  if (!mainWindow) createWindow()
+  if (!mainWindow) return
+
+  mainWindow.show()
+  setPanelExpanded(true)
+  mainWindow.focus()
+}
+
+function createAppMenu(): Electron.Menu {
+  return Menu.buildFromTemplate([
+    { label: '打开面板', click: openPanel },
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() }
+  ])
+}
+
+function showAppMenu(): void {
+  createAppMenu().popup({ window: mainWindow ?? undefined })
+}
+
+function createTray(): void {
+  if (tray) return
+
+  tray = new Tray(icon)
+  tray.setToolTip('Token Ball')
+  tray.setContextMenu(createAppMenu())
+  tray.on('right-click', showAppMenu)
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 78,
@@ -310,7 +344,7 @@ function createWindow(): void {
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
-    skipTaskbar: false,
+    skipTaskbar: true,
     autoHideMenuBar: true,
     hasShadow: false,
     ...(process.platform === 'linux' ? { icon } : {}),
@@ -357,6 +391,7 @@ app.whenReady().then(() => {
   ipcMain.handle('config:save', (_, config: AppConfig) => saveConfig(config))
   ipcMain.handle('groups:get', () => getGroups())
   ipcMain.handle('usage:refresh', () => refreshUsage())
+  ipcMain.handle('window:show-menu', () => showAppMenu())
   ipcMain.handle('window:set-expanded', (_, expanded: boolean) => setPanelExpanded(expanded))
   ipcMain.handle('window:start-collapsed-drag', (_, cursorX: number, cursorY: number) =>
     startCollapsedWindowDrag(cursorX, cursorY)
@@ -366,6 +401,8 @@ app.whenReady().then(() => {
     mainWindow?.setAlwaysOnTop(enabled)
   })
 
+  if (process.platform === 'darwin') app.dock?.hide()
+  createTray()
   createWindow()
 
   app.on('activate', function () {

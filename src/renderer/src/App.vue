@@ -27,6 +27,7 @@ let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
 let didDragBall = false
+let removePanelExpandedListener: (() => void) | undefined
 
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
@@ -107,6 +108,10 @@ function toggleBallMetric(): void {
   ballMetric.value = ballMetric.value === 'fiveHour' ? 'sevenDay' : 'fiveHour'
 }
 
+function showWindowMenu(): void {
+  void window.api.showWindowMenu()
+}
+
 async function refresh(): Promise<void> {
   if (!config.value.baseUrl || !config.value.adminApiKey) {
     error.value = '请先完成 Sub2API 配置'
@@ -159,6 +164,9 @@ watch(
 )
 
 onMounted(async () => {
+  removePanelExpandedListener = window.api.onPanelExpandedChanged((value) => {
+    expanded.value = value
+  })
   config.value = await window.api.getConfig()
   refreshIntervalInput.value = String(config.value.refreshIntervalSeconds)
   showSettings.value = !config.value.baseUrl || !config.value.adminApiKey
@@ -167,6 +175,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  removePanelExpandedListener?.()
   if (refreshTimer) window.clearInterval(refreshTimer)
 })
 </script>
@@ -177,14 +186,13 @@ onBeforeUnmount(() => {
       v-if="!expanded"
       class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
       :style="{ '--water-level': waterLevel, '--water-color': ballTone }"
-      :title="`切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}，双击展开`"
+      :title="`切换到${ballMetric === 'fiveHour' ? '7天' : '5小时'}`"
       @click="toggleBallMetric"
-      @dblclick="setExpanded(true)"
       @pointerdown="startBallDrag"
       @pointermove="trackBallDrag"
       @pointerup="stopBallDrag"
       @pointercancel="stopBallDrag"
-      @contextmenu.prevent
+      @contextmenu.prevent="showWindowMenu"
     >
       <span class="token-reservoir__glass absolute inset-0 rounded-full" />
       <span class="token-reservoir__water absolute inset-x-0 bottom-0" />
