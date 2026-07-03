@@ -53,6 +53,28 @@ const selectedProxy = computed<ApiProxy | null>(() => {
   if (selectedProxyId === 'none') return null
   return proxies.value.find((proxy) => proxy.id === Number(selectedProxyId)) ?? null
 })
+const proxyStatusTone = computed(() => {
+  if (config.value.selectedProxyId === 'none') return '#6b7280'
+  if (proxySnapshot.value?.result?.success) return '#20c997'
+  if (proxySnapshot.value?.result) return '#ff5d5d'
+  const status = selectedProxy.value?.quality_status || selectedProxy.value?.latency_status
+  if (status === 'healthy' || status === 'success') return '#20c997'
+  if (status) return '#f0b84b'
+  return '#6b7280'
+})
+const proxyStatusLabel = computed(() => {
+  if (config.value.selectedProxyId === 'none') return 'OFF'
+  if (proxySnapshot.value?.result?.success) return 'OK'
+  if (proxySnapshot.value?.result) return 'ERR'
+  return selectedProxy.value ? 'IP' : '--'
+})
+const proxyStatusTitle = computed(() => {
+  if (config.value.selectedProxyId === 'none') return '未监控代理'
+  const name = selectedProxy.value?.name ?? '代理'
+  const latency = formatLatency(proxySnapshot.value?.result?.latency_ms ?? selectedProxy.value?.latency_ms)
+  const ip = proxySnapshot.value?.result?.ip_address ?? selectedProxy.value?.ip_address ?? '--'
+  return `${name} · ${proxyStatusLabel.value} · ${ip} · ${latency}`
+})
 
 const ballTone = computed(() => {
   if (error.value) return '#ff5d5d'
@@ -214,7 +236,6 @@ function resetTimer(): void {
 }
 
 function resetProxyTimer(): void {
-  if (!isPanelView) return
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
   const interval = Math.max(15, config.value.proxyPollIntervalSeconds) * 1000
   proxyRefreshTimer = window.setInterval(refreshProxy, interval)
@@ -288,6 +309,13 @@ onBeforeUnmount(() => {
       >
         P
       </button>
+      <div
+        class="absolute left-0 top-0 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
+        :style="{ color: proxyStatusTone }"
+        :title="proxyStatusTitle"
+      >
+        {{ proxyStatusLabel }}
+      </div>
     </div>
 
     <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
