@@ -224,6 +224,7 @@ async function save(): Promise<void> {
   try {
     const selectedGroupId =
       config.value.selectedGroupId === 'all' ? 'all' : Number(config.value.selectedGroupId)
+    const ballPosition = config.value.ballPosition
     config.value = await window.api.saveConfig({
       baseUrl: config.value.baseUrl,
       adminApiKey: config.value.adminApiKey,
@@ -232,7 +233,7 @@ async function save(): Promise<void> {
       selectedProxyId:
         config.value.selectedProxyId === 'none' ? 'none' : Number(config.value.selectedProxyId),
       proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300,
-      ballPosition: config.value.ballPosition
+      ballPosition: ballPosition ? { x: ballPosition.x, y: ballPosition.y } : null
     })
     refreshIntervalInput.value = config.value.refreshIntervalSeconds
     proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
@@ -271,6 +272,7 @@ watch(
 onMounted(async () => {
   removePanelVisibilityListener = window.api.onPanelVisibilityChanged((value) => {
     panelVisible.value = value
+    if (isPanelView && value) void refreshActiveTab()
   })
   removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
     snapshot.value = value

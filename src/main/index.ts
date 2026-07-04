@@ -41,6 +41,17 @@ type ApiAccount = {
   groups?: ApiGroup[]
 }
 
+type ApiUsageWindow = {
+  utilization?: number
+  resets_at?: string
+}
+
+type ApiAccountUsage = {
+  updated_at?: string
+  five_hour?: ApiUsageWindow
+  seven_day?: ApiUsageWindow
+}
+
 type ApiProxy = {
   id: number
   name: string
@@ -230,7 +241,7 @@ function average(values: number[]): number {
   return Math.round(values.reduce((total, value) => total + value, 0) / values.length)
 }
 
-function mapAccount(account: ApiAccount): UsageAccount {
+function mapAccount(account: ApiAccount, usage?: ApiAccountUsage): UsageAccount {
   const extra = account.extra ?? {}
   const groups = account.groups ?? []
   return {
@@ -241,11 +252,11 @@ function mapAccount(account: ApiAccount): UsageAccount {
     plan: account.credentials?.plan_type || '',
     groupIds: account.group_ids ?? groups.map((group) => group.id),
     groupNames: groups.map((group) => group.name),
-    fiveHourPercent: numberValue(extra.codex_5h_used_percent),
-    fiveHourResetAt: stringValue(extra.codex_5h_reset_at),
-    sevenDayPercent: numberValue(extra.codex_7d_used_percent),
-    sevenDayResetAt: stringValue(extra.codex_7d_reset_at),
-    updatedAt: stringValue(extra.codex_usage_updated_at)
+    fiveHourPercent: numberValue(usage?.five_hour?.utilization ?? extra.codex_5h_used_percent),
+    fiveHourResetAt: stringValue(usage?.five_hour?.resets_at ?? extra.codex_5h_reset_at),
+    sevenDayPercent: numberValue(usage?.seven_day?.utilization ?? extra.codex_7d_used_percent),
+    sevenDayResetAt: stringValue(usage?.seven_day?.resets_at ?? extra.codex_7d_reset_at),
+    updatedAt: stringValue(usage?.updated_at ?? extra.codex_usage_updated_at)
   }
 }
 
@@ -264,6 +275,10 @@ async function testProxy(proxyId: number): Promise<ProxyTestResult> {
   return sub2apiFetch<ProxyTestResult>(`api/v1/admin/proxies/${proxyId}/test`, { method: 'POST' })
 }
 
+async function getAccountUsage(accountId: number): Promise<ApiAccountUsage> {
+  return sub2apiFetch<ApiAccountUsage>(`api/v1/admin/accounts/${accountId}/usage`)
+}
+
 async function refreshUsage(): Promise<{
   updatedAt: string
   selectedGroupId: number | 'all'
@@ -279,11 +294,20 @@ async function refreshUsage(): Promise<{
     )
   ])
 
-  const accounts = accountData.items
-    .map(mapAccount)
-    .filter((account) =>
-      config.selectedGroupId === 'all' ? true : account.groupIds.includes(config.selectedGroupId)
-    )
+  const selectedAccounts = accountData.items.filter((account) => {
+    const groupIds = account.group_ids ?? account.groups?.map((group) => group.id) ?? []
+    return config.selectedGroupId === 'all' ? true : groupIds.includes(config.selectedGroupId)
+  })
+
+  const accounts = await Promise.all(
+    selectedAccounts.map(async (account) => {
+      try {
+        return mapAccount(account, await getAccountUsage(account.id))
+      } catch {
+        return mapAccount(account)
+      }
+    })
+  )
 
   const fiveHourValues = accounts.map((account) => account.fiveHourPercent)
   const sevenDayValues = accounts.map((account) => account.sevenDayPercent)
