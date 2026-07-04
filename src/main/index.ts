@@ -536,7 +536,7 @@ function createTray(): void {
   if (tray) return
 
   tray = new Tray(icon)
-  tray.setToolTip('Token Ball')
+  tray.setToolTip('Quota Float')
   tray.setContextMenu(createAppMenu())
   tray.on('right-click', showAppMenu)
 }

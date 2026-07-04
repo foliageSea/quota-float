@@ -1,5 +1,5 @@
-appId: com.tokenball.app
-productName: token-ball
+appId: com.quotafloat.app
+productName: Quota Float
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: token-ball
+  executableName: quota-float
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

@@ -331,7 +331,7 @@ onBeforeUnmount(() => {
     <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
       <header class="drag-region flex h-12 items-center justify-between border-b border-border px-3">
         <div class="min-w-0">
-          <div class="text-sm font-semibold leading-4">Token Ball</div>
+          <div class="text-sm font-semibold leading-4">Quota Float</div>
           <div class="text-[11px] text-muted-foreground">{{ accountCount }} accounts</div>
         </div>
         <div class="no-drag flex items-center gap-1">
