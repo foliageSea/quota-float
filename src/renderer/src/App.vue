@@ -316,7 +316,7 @@ onBeforeUnmount(() => {
         <span class="token-reservoir__track absolute inset-1 rounded-full" />
         <span class="token-reservoir__center absolute inset-[7px] rounded-full" />
         <span class="relative z-10 flex flex-col items-center leading-none">
-          <span class="text-lg font-semibold text-white">{{ remainingPercent }}%</span>
+          <span class="text-[15px] font-semibold text-white">{{ remainingPercent }}%</span>
           <span class="mt-1 text-[10px] font-medium text-white/64">{{ ballMetricLabel }}</span>
         </span>
       </button>
