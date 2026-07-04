@@ -318,8 +318,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="h-full w-full overflow-hidden p-1 text-foreground">
-    <div v-if="isBallView" class="relative h-[70px] w-[70px]">
+  <main class="h-full w-full overflow-hidden text-foreground" :class="isPanelView && 'p-1'">
+    <div v-if="isBallView" class="relative flex h-[78px] w-[78px] items-center justify-center">
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
         :class="usageGlowActive && 'token-reservoir--glow'"

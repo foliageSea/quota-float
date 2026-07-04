@@ -141,18 +141,18 @@ select {
 @keyframes token-reservoir-pulse {
   0% {
     box-shadow:
-      0 0 0 0 color-mix(in srgb, var(--water-color) 58%, transparent),
+      inset 0 0 0 0 color-mix(in srgb, var(--water-color) 45%, transparent),
       0 10px 24px rgba(0, 0, 0, 0.28);
   }
   45% {
     box-shadow:
-      0 0 0 9px color-mix(in srgb, var(--water-color) 18%, transparent),
-      0 0 26px color-mix(in srgb, var(--water-color) 45%, transparent),
+      inset 0 0 0 4px color-mix(in srgb, var(--water-color) 36%, transparent),
+      inset 0 0 18px color-mix(in srgb, var(--water-color) 48%, transparent),
       0 10px 24px rgba(0, 0, 0, 0.28);
   }
   100% {
     box-shadow:
-      0 0 0 14px transparent,
+      inset 0 0 0 0 transparent,
       0 10px 24px rgba(0, 0, 0, 0.28);
   }
 }
