@@ -319,7 +319,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="h-full w-full overflow-hidden text-foreground" :class="isPanelView && 'p-1'">
-    <div v-if="isBallView" class="relative flex h-[78px] w-[78px] items-center justify-center">
+    <div v-if="isBallView" class="relative flex h-[86px] w-[86px] items-center justify-center">
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
         :class="usageGlowActive && 'token-reservoir--glow'"
@@ -339,7 +339,7 @@ onBeforeUnmount(() => {
         </span>
       </button>
       <div
-        class="absolute bottom-0 right-0 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
+        class="absolute bottom-1 right-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
         :style="{ color: proxyStatusTone }"
       >
         {{ proxyStatusLabel }}

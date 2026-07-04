@@ -118,7 +118,7 @@ const defaultConfig: AppConfig = {
   ballPosition: null
 }
 
-const collapsedSize = 78
+const collapsedSize = 86
 
 let mainWindow: BrowserWindow | null = null
 let ballWindow: BrowserWindow | null = null
@@ -425,7 +425,8 @@ function updateBallPosition(position: WindowPosition): void {
 
 function saveCurrentBallPosition(): void {
   if (!ballWindow || ballWindow.isDestroyed()) return
-  updateBallPosition(ballWindow.getBounds())
+  const [x, y] = ballWindow.getPosition()
+  updateBallPosition({ x, y })
 }
 
 function resetBallPosition(): void {
@@ -498,9 +499,13 @@ function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
     }
 
     const point = screen.getCursorScreenPoint()
-    ballWindow.setPosition(
-      Math.round(point.x - collapsedDragOffset.x),
-      Math.round(point.y - collapsedDragOffset.y),
+    ballWindow.setBounds(
+      {
+        x: Math.round(point.x - collapsedDragOffset.x),
+        y: Math.round(point.y - collapsedDragOffset.y),
+        width: collapsedSize,
+        height: collapsedSize
+      },
       false
     )
 
@@ -554,12 +559,14 @@ function createBallWindow(): void {
   const position = getSavedBallPosition()
 
   const window = new BrowserWindow({
-    width: 78,
-    height: 78,
+    width: collapsedSize,
+    height: collapsedSize,
     x: position.x,
     y: position.y,
-    minWidth: 78,
-    minHeight: 78,
+    minWidth: collapsedSize,
+    minHeight: collapsedSize,
+    maxWidth: collapsedSize,
+    maxHeight: collapsedSize,
     show: false,
     frame: false,
     transparent: true,
