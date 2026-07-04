@@ -39,8 +39,10 @@ const proxyPollIntervalInput = ref(defaultConfig.proxyPollIntervalSeconds)
 const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
+const usageGlowActive = ref(false)
 let refreshTimer: number | undefined
 let proxyRefreshTimer: number | undefined
+let usageGlowTimer: number | undefined
 let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
@@ -176,6 +178,19 @@ function showWindowMenu(): void {
   void window.api.showWindowMenu()
 }
 
+function flashUsageGlow(): void {
+  if (!isBallView) return
+  if (usageGlowTimer) window.clearTimeout(usageGlowTimer)
+  usageGlowActive.value = false
+  window.requestAnimationFrame(() => {
+    usageGlowActive.value = true
+    usageGlowTimer = window.setTimeout(() => {
+      usageGlowActive.value = false
+      usageGlowTimer = undefined
+    }, 1200)
+  })
+}
+
 async function refresh(): Promise<void> {
   if (!config.value.baseUrl || !config.value.adminApiKey) {
     error.value = '请先完成 Sub2API 配置'
@@ -276,6 +291,7 @@ onMounted(async () => {
   })
   removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
     snapshot.value = value
+    flashUsageGlow()
   })
   removeProxyUpdatedListener = window.api.onProxyUpdated((value) => {
     proxySnapshot.value = value
@@ -297,6 +313,7 @@ onBeforeUnmount(() => {
   removeProxyUpdatedListener?.()
   if (refreshTimer) window.clearInterval(refreshTimer)
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
+  if (usageGlowTimer) window.clearTimeout(usageGlowTimer)
 })
 </script>
 
@@ -305,6 +322,7 @@ onBeforeUnmount(() => {
     <div v-if="isBallView" class="relative h-[70px] w-[70px]">
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
+        :class="usageGlowActive && 'token-reservoir--glow'"
         :style="{ '--water-level': waterLevel, '--water-color': ballTone, '--remaining-percent': `${remainingPercent}%` }"
         @click="openPanelFromBall"
         @pointerdown="startBallDrag"

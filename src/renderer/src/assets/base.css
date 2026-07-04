@@ -98,6 +98,32 @@ select {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
+.token-reservoir::after {
+  position: absolute;
+  inset: -35%;
+  z-index: 3;
+  pointer-events: none;
+  content: '';
+  background: linear-gradient(
+    115deg,
+    transparent 38%,
+    color-mix(in srgb, var(--water-color) 15%, transparent) 46%,
+    rgba(255, 255, 255, 0.72) 50%,
+    color-mix(in srgb, var(--water-color) 18%, transparent) 54%,
+    transparent 62%
+  );
+  opacity: 0;
+  transform: translateX(-42%) rotate(8deg);
+}
+
+.token-reservoir--glow {
+  animation: token-reservoir-pulse 1200ms ease-out;
+}
+
+.token-reservoir--glow::after {
+  animation: token-reservoir-sheen 900ms ease-out;
+}
+
 .token-reservoir__track {
   z-index: 1;
   background:
@@ -110,6 +136,39 @@ select {
   z-index: 2;
   background: #171b22;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+@keyframes token-reservoir-pulse {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--water-color) 58%, transparent),
+      0 10px 24px rgba(0, 0, 0, 0.28);
+  }
+  45% {
+    box-shadow:
+      0 0 0 9px color-mix(in srgb, var(--water-color) 18%, transparent),
+      0 0 26px color-mix(in srgb, var(--water-color) 45%, transparent),
+      0 10px 24px rgba(0, 0, 0, 0.28);
+  }
+  100% {
+    box-shadow:
+      0 0 0 14px transparent,
+      0 10px 24px rgba(0, 0, 0, 0.28);
+  }
+}
+
+@keyframes token-reservoir-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-42%) rotate(8deg);
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(42%) rotate(8deg);
+  }
 }
 
 .panel-scroll {
