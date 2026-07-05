@@ -40,7 +40,6 @@ const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 const usageGlowActive = ref(false)
-let refreshTimer: number | undefined
 let proxyRefreshTimer: number | undefined
 let usageGlowTimer: number | undefined
 let dragPointerId: number | null = null
@@ -261,23 +260,11 @@ async function save(): Promise<void> {
   }
 }
 
-function resetTimer(): void {
-  if (!isPanelView) return
-  if (refreshTimer) window.clearInterval(refreshTimer)
-  const interval = Math.max(15, config.value.refreshIntervalSeconds) * 1000
-  refreshTimer = window.setInterval(refresh, interval)
-}
-
 function resetProxyTimer(): void {
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
   const interval = Math.max(15, config.value.proxyPollIntervalSeconds) * 1000
   proxyRefreshTimer = window.setInterval(refreshProxy, interval)
 }
-
-watch(
-  () => config.value.refreshIntervalSeconds,
-  () => resetTimer()
-)
 
 watch(
   () => config.value.proxyPollIntervalSeconds,
@@ -303,7 +290,6 @@ onMounted(async () => {
   snapshot.value = await window.api.getLatestUsage()
   proxySnapshot.value = await window.api.getLatestProxy()
   if (isPanelView || !snapshot.value) await Promise.all([refresh(), refreshProxy()])
-  resetTimer()
   resetProxyTimer()
 })
 
@@ -311,7 +297,6 @@ onBeforeUnmount(() => {
   removePanelVisibilityListener?.()
   removeUsageUpdatedListener?.()
   removeProxyUpdatedListener?.()
-  if (refreshTimer) window.clearInterval(refreshTimer)
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
   if (usageGlowTimer) window.clearTimeout(usageGlowTimer)
 })

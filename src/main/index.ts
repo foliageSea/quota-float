@@ -126,6 +126,7 @@ let panelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
 let collapsedDragOffset: { x: number; y: number } | null = null
+let usageRefreshTimer: ReturnType<typeof setInterval> | null = null
 let latestUsageSnapshot: Awaited<ReturnType<typeof refreshUsage>> | null = null
 let latestProxySnapshot: Awaited<ReturnType<typeof refreshProxy>> | null = null
 
@@ -176,6 +177,10 @@ function saveConfig(config: AppConfig): AppConfig {
 
   writeFileSync(getConfigPath(), JSON.stringify(normalized, null, 2))
   return normalized
+}
+
+function hasUsageConfig(config = loadConfig()): boolean {
+  return Boolean(config.baseUrl && config.adminApiKey)
 }
 
 function requireConfig(): AppConfig {
@@ -369,6 +374,34 @@ async function refreshUsageSnapshot(): Promise<Awaited<ReturnType<typeof refresh
   latestUsageSnapshot = await refreshUsage()
   broadcastUsageSnapshot(latestUsageSnapshot)
   return latestUsageSnapshot
+}
+
+function stopUsagePolling(): void {
+  if (usageRefreshTimer) clearInterval(usageRefreshTimer)
+  usageRefreshTimer = null
+}
+
+function startUsagePolling(): void {
+  stopUsagePolling()
+
+  const config = loadConfig()
+  if (!hasUsageConfig(config)) return
+
+  const interval = Math.max(15, config.refreshIntervalSeconds) * 1000
+  usageRefreshTimer = setInterval(() => {
+    refreshUsageSnapshot().catch(() => {
+      // Keep polling even if one request fails; manual refresh surfaces the error to the UI.
+    })
+  }, interval)
+}
+
+function resetUsagePolling(): void {
+  startUsagePolling()
+  if (!hasUsageConfig()) return
+
+  refreshUsageSnapshot().catch(() => {
+    // The renderer reports refresh errors when users trigger a manual refresh.
+  })
 }
 
 async function refreshProxySnapshot(): Promise<Awaited<ReturnType<typeof refreshProxy>>> {
@@ -660,7 +693,11 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('config:get', () => loadConfig())
-  ipcMain.handle('config:save', (_, config: AppConfig) => saveConfig(config))
+  ipcMain.handle('config:save', (_, config: AppConfig) => {
+    const savedConfig = saveConfig(config)
+    resetUsagePolling()
+    return savedConfig
+  })
   ipcMain.handle('groups:get', () => getGroups())
   ipcMain.handle('usage:get-latest', () => latestUsageSnapshot)
   ipcMain.handle('usage:refresh', () => refreshUsageSnapshot())
@@ -682,6 +719,7 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide()
   createTray()
   createWindow()
+  resetUsagePolling()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -695,6 +733,7 @@ app.whenReady().then(() => {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    stopUsagePolling()
     app.quit()
   }
 })
