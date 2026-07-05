@@ -12,6 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
+  icon: build/icon.png
   executableName: quota-float
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
