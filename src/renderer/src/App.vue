@@ -80,7 +80,6 @@ const proxyStatusLabel = computed(() => {
   return selectedProxy.value ? 'IP' : '--'
 })
 const ballTone = computed(() => {
-  if (error.value) return '#ff5d5d'
   if (ballAveragePercent.value >= 90) return '#ff5d5d'
   if (ballAveragePercent.value >= 70) return '#f0b84b'
   return '#20c997'
