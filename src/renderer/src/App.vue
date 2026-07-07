@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, RefreshCw, Save, Wifi } from '@lucide/vue'
+import { AlertCircle, ChevronDown, Eye, EyeOff, RefreshCw, Save, Wifi } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import {
@@ -40,6 +40,7 @@ const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 const usageGlowActive = ref(false)
+const apiKeyVisible = ref(false)
 let proxyRefreshTimer: number | undefined
 let usageGlowTimer: number | undefined
 let dragPointerId: number | null = null
@@ -383,7 +384,26 @@ onBeforeUnmount(() => {
           </label>
           <label class="block space-y-1">
             <span class="text-xs text-muted-foreground">管理员 API Key</span>
-            <Input v-model="config.adminApiKey" type="password" placeholder="admin-..." />
+            <div class="relative">
+              <Input
+                v-model="config.adminApiKey"
+                :type="apiKeyVisible ? 'text' : 'password'"
+                placeholder="admin-..."
+                class="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                :aria-label="apiKeyVisible ? '隐藏 API Key' : '查看 API Key'"
+                :title="apiKeyVisible ? '隐藏 API Key' : '查看 API Key'"
+                @click="apiKeyVisible = !apiKeyVisible"
+              >
+                <EyeOff v-if="apiKeyVisible" class="h-4 w-4" />
+                <Eye v-else class="h-4 w-4" />
+              </Button>
+            </div>
           </label>
           <div class="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
             <label class="block space-y-1">
