@@ -410,6 +410,21 @@ async function refreshProxySnapshot(): Promise<Awaited<ReturnType<typeof refresh
   return latestProxySnapshot
 }
 
+async function testSelectedProxySnapshot(): Promise<Awaited<ReturnType<typeof refreshProxy>>> {
+  const config = requireConfig()
+  if (config.selectedProxyId === 'none') throw new Error('请先选择要测试的代理')
+
+  const [proxies, result] = await Promise.all([getProxies(), testProxy(config.selectedProxyId)])
+  latestProxySnapshot = {
+    updatedAt: new Date().toISOString(),
+    selectedProxyId: config.selectedProxyId,
+    proxies,
+    result
+  }
+  broadcastProxySnapshot(latestProxySnapshot)
+  return latestProxySnapshot
+}
+
 function getRendererUrl(view: 'ball' | 'panel'): string {
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
   if (!rendererUrl) return ''
@@ -703,6 +718,7 @@ app.whenReady().then(() => {
   ipcMain.handle('usage:refresh', () => refreshUsageSnapshot())
   ipcMain.handle('proxy:get-latest', () => latestProxySnapshot)
   ipcMain.handle('proxy:refresh', () => refreshProxySnapshot())
+  ipcMain.handle('proxy:test', () => testSelectedProxySnapshot())
   ipcMain.handle('window:show-menu', () => showAppMenu())
   ipcMain.handle('window:show-panel', () => showPanel())
   ipcMain.handle('window:hide-panel', () => hidePanel())

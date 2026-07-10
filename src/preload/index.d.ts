@@ -9,6 +9,7 @@ export type TokenBallAPI = {
   refreshUsage: () => Promise<UsageSnapshot>
   getLatestProxy: () => Promise<ProxySnapshot | null>
   refreshProxy: () => Promise<ProxySnapshot>
+  testSelectedProxy: () => Promise<ProxySnapshot>
   showWindowMenu: () => Promise<void>
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => () => void
   onPanelVisibilityChanged: (callback: (visible: boolean) => void) => () => void

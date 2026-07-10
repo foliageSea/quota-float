@@ -96,6 +96,7 @@ const api = {
   refreshUsage: () => ipcRenderer.invoke('usage:refresh'),
   getLatestProxy: () => ipcRenderer.invoke('proxy:get-latest'),
   refreshProxy: () => ipcRenderer.invoke('proxy:refresh'),
+  testSelectedProxy: () => ipcRenderer.invoke('proxy:test'),
   showWindowMenu: () => ipcRenderer.invoke('window:show-menu'),
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => {
     const listener = (_: Electron.IpcRendererEvent, visible: boolean): void => callback(visible)

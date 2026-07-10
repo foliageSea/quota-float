@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, Eye, EyeOff, RefreshCw, Save, Wifi } from '@lucide/vue'
+import { AlertCircle, ChevronDown, Eye, EyeOff, Play, RefreshCw, Save, Wifi } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import {
@@ -32,6 +32,7 @@ const panelVisible = ref(false)
 const activePanelTab = ref<PanelTab>('usage')
 const loading = ref(false)
 const saving = ref(false)
+const proxyTesting = ref(false)
 const error = ref('')
 const config = ref<AppConfig>({ ...defaultConfig })
 const refreshIntervalInput = ref(defaultConfig.refreshIntervalSeconds)
@@ -232,6 +233,28 @@ async function refreshProxy(): Promise<void> {
   }
 }
 
+async function testSelectedProxy(): Promise<void> {
+  if (!config.value.baseUrl || !config.value.adminApiKey) {
+    error.value = '请先完成 Sub2API 配置'
+    activePanelTab.value = 'settings'
+    return
+  }
+  if (config.value.selectedProxyId === 'none') {
+    error.value = '请先选择要测试的代理'
+    return
+  }
+
+  proxyTesting.value = true
+  error.value = ''
+  try {
+    proxySnapshot.value = await window.api.testSelectedProxy()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '代理测试失败'
+  } finally {
+    proxyTesting.value = false
+  }
+}
+
 async function save(): Promise<void> {
   saving.value = true
   error.value = ''
@@ -331,7 +354,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-2xl shadow-black/45">
+    <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card/80 shadow-2xl shadow-black/45 backdrop-blur-lg">
       <header class="drag-region flex h-12 items-center justify-between border-b border-border px-3">
         <div class="min-w-0">
           <div class="text-sm font-semibold leading-4">Quota Float</div>
@@ -474,12 +497,25 @@ onBeforeUnmount(() => {
                 {{ selectedProxy?.name ?? '未选择代理' }}
               </div>
             </div>
-            <span
-              class="shrink-0 rounded px-2 py-0.5 text-[11px]"
-              :class="proxySnapshot?.result?.success ? 'bg-emerald-500/15 text-emerald-300' : 'bg-secondary text-secondary-foreground'"
-            >
-              {{ proxySnapshot?.result ? (proxySnapshot.result.success ? '可用' : '异常') : '待监测' }}
-            </span>
+            <div class="flex shrink-0 items-center gap-2">
+              <span
+                class="rounded px-2 py-0.5 text-[11px]"
+                :class="proxySnapshot?.result?.success ? 'bg-emerald-500/15 text-emerald-300' : 'bg-secondary text-secondary-foreground'"
+              >
+                {{ proxySnapshot?.result ? (proxySnapshot.result.success ? '可用' : '异常') : '待监测' }}
+              </span>
+              <Button
+                size="icon"
+                variant="secondary"
+                :disabled="proxyTesting || config.selectedProxyId === 'none'"
+                aria-label="主动测试代理"
+                title="主动测试代理"
+                @click="testSelectedProxy"
+              >
+                <RefreshCw v-if="proxyTesting" class="h-3.5 w-3.5 animate-spin" />
+                <Play v-else class="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
           <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div class="min-w-0 rounded bg-muted/35 p-2">
@@ -501,14 +537,14 @@ onBeforeUnmount(() => {
         <div v-if="activePanelTab === 'usage'">
           <div class="grid grid-cols-2 gap-2">
             <div class="rounded-md border border-border bg-background/55 p-3">
-              <div class="text-xs text-muted-foreground">5h 平均 / 最高</div>
-              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.fiveHourAverage ?? 0 }}% / {{ snapshot?.summary.fiveHourMax ?? 0 }}%</div>
-              <Progress class="mt-2" :value="snapshot?.summary.fiveHourMax ?? 0" :tone="progressTone(snapshot?.summary.fiveHourMax ?? 0)" />
+              <div class="text-xs text-muted-foreground">5h 平均</div>
+              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.fiveHourAverage ?? 0 }}%</div>
+              <Progress class="mt-2" :value="snapshot?.summary.fiveHourAverage ?? 0" :tone="progressTone(snapshot?.summary.fiveHourAverage ?? 0)" />
             </div>
             <div class="rounded-md border border-border bg-background/55 p-3">
-              <div class="text-xs text-muted-foreground">7d 平均 / 最高</div>
-              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.sevenDayAverage ?? 0 }}% / {{ snapshot?.summary.sevenDayMax ?? 0 }}%</div>
-              <Progress class="mt-2" :value="snapshot?.summary.sevenDayMax ?? 0" :tone="progressTone(snapshot?.summary.sevenDayMax ?? 0)" />
+              <div class="text-xs text-muted-foreground">7d 平均</div>
+              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.sevenDayAverage ?? 0 }}%</div>
+              <Progress class="mt-2" :value="snapshot?.summary.sevenDayAverage ?? 0" :tone="progressTone(snapshot?.summary.sevenDayAverage ?? 0)" />
             </div>
           </div>
 
