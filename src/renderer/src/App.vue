@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, Eye, EyeOff, Play, RefreshCw, Save, Wifi } from '@lucide/vue'
+import { AlertCircle, ChevronDown, ExternalLink, Eye, EyeOff, Play, RefreshCw, Save, Wifi } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import {
@@ -12,7 +12,14 @@ import {
 } from './components/ui/number-field'
 import Progress from './components/ui/Progress.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
-import type { ApiProxy, AppConfig, UsageAccount, UsageSnapshot, ProxySnapshot } from '../../preload/index'
+import type {
+  ApiProxy,
+  AppConfig,
+  UsageAccount,
+  UsageSnapshot,
+  ProxySnapshot,
+  WebNetworkInterface
+} from '../../preload/index'
 
 const defaultConfig: AppConfig = {
   baseUrl: '',
@@ -21,6 +28,8 @@ const defaultConfig: AppConfig = {
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
   proxyPollIntervalSeconds: 300,
+  webServerPort: 37890,
+  webNetworkAddress: 'auto',
   ballPosition: null
 }
 
@@ -39,6 +48,7 @@ const refreshIntervalInput = ref(defaultConfig.refreshIntervalSeconds)
 const proxyPollIntervalInput = ref(defaultConfig.proxyPollIntervalSeconds)
 const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
+const webNetworkInterfaces = ref<WebNetworkInterface[]>([])
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 const usageGlowActive = ref(false)
 const apiKeyVisible = ref(false)
@@ -255,6 +265,16 @@ async function testSelectedProxy(): Promise<void> {
   }
 }
 
+async function openWebUsage(): Promise<void> {
+  try {
+    const selectedGroupId =
+      config.value.selectedGroupId === 'all' ? 'all' : Number(config.value.selectedGroupId)
+    await window.api.openWebUsage(selectedGroupId)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '打开网页失败'
+  }
+}
+
 async function save(): Promise<void> {
   saving.value = true
   error.value = ''
@@ -270,6 +290,8 @@ async function save(): Promise<void> {
       selectedProxyId:
         config.value.selectedProxyId === 'none' ? 'none' : Number(config.value.selectedProxyId),
       proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300,
+      webServerPort: Number(config.value.webServerPort) || 37890,
+      webNetworkAddress: config.value.webNetworkAddress,
       ballPosition: ballPosition ? { x: ballPosition.x, y: ballPosition.y } : null
     })
     refreshIntervalInput.value = config.value.refreshIntervalSeconds
@@ -307,6 +329,7 @@ onMounted(async () => {
     proxySnapshot.value = value
   })
   config.value = await window.api.getConfig()
+  webNetworkInterfaces.value = await window.api.getWebNetworkInterfaces()
   refreshIntervalInput.value = config.value.refreshIntervalSeconds
   proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
   if (!config.value.baseUrl || !config.value.adminApiKey) activePanelTab.value = 'settings'
@@ -428,6 +451,36 @@ onBeforeUnmount(() => {
               </Button>
             </div>
           </label>
+          <div class="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">Web 端口</span>
+              <Input
+                :model-value="String(config.webServerPort)"
+                type="number"
+                min="1024"
+                max="65535"
+                @update:model-value="config.webServerPort = Number($event) || 37890"
+              />
+            </label>
+            <label class="block space-y-1">
+              <span class="text-xs text-muted-foreground">网页网卡</span>
+              <Select v-model="config.webNetworkAddress">
+                <SelectTrigger>
+                  <SelectValue placeholder="自动选择" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自动选择</SelectItem>
+                  <SelectItem
+                    v-for="networkInterface in webNetworkInterfaces"
+                    :key="networkInterface.address"
+                    :value="networkInterface.address"
+                  >
+                    {{ networkInterface.name }} · {{ networkInterface.address }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
           <div class="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">统计分组</span>
@@ -443,8 +496,8 @@ onBeforeUnmount(() => {
                 </SelectContent>
               </Select>
             </label>
-            <label class="block space-y-1">
-              <span class="text-xs text-muted-foreground">刷新秒</span>
+            <div class="space-y-1">
+              <span class="block text-xs text-muted-foreground">刷新秒</span>
               <NumberField v-model="refreshIntervalInput" :min="15" :step="15">
                 <NumberFieldContent>
                   <NumberFieldDecrement />
@@ -452,8 +505,12 @@ onBeforeUnmount(() => {
                   <NumberFieldIncrement />
                 </NumberFieldContent>
               </NumberField>
-            </label>
+            </div>
           </div>
+          <Button type="button" variant="secondary" class="w-full" @click="openWebUsage">
+            <ExternalLink class="h-4 w-4" />
+            打开分组网页
+          </Button>
           <div class="grid grid-cols-[minmax(0,1fr)_128px] gap-2">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">监控代理</span>

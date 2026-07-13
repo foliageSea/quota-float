@@ -8,7 +8,14 @@ export type AppConfig = {
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
   proxyPollIntervalSeconds: number
+  webServerPort: number
+  webNetworkAddress: string
   ballPosition: { x: number; y: number } | null
+}
+
+export type WebNetworkInterface = {
+  name: string
+  address: string
 }
 
 export type ApiGroup = {
@@ -97,6 +104,8 @@ const api = {
   getLatestProxy: () => ipcRenderer.invoke('proxy:get-latest'),
   refreshProxy: () => ipcRenderer.invoke('proxy:refresh'),
   testSelectedProxy: () => ipcRenderer.invoke('proxy:test'),
+  openWebUsage: (groupId: number | 'all') => ipcRenderer.invoke('web:open-usage', groupId),
+  getWebNetworkInterfaces: () => ipcRenderer.invoke('web:get-network-interfaces'),
   showWindowMenu: () => ipcRenderer.invoke('window:show-menu'),
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => {
     const listener = (_: Electron.IpcRendererEvent, visible: boolean): void => callback(visible)

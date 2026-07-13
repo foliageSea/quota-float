@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { ApiGroup, AppConfig, ProxySnapshot, UsageSnapshot } from './index'
+import type { ApiGroup, AppConfig, ProxySnapshot, UsageSnapshot, WebNetworkInterface } from './index'
 
 export type TokenBallAPI = {
   getConfig: () => Promise<AppConfig>
@@ -10,6 +10,8 @@ export type TokenBallAPI = {
   getLatestProxy: () => Promise<ProxySnapshot | null>
   refreshProxy: () => Promise<ProxySnapshot>
   testSelectedProxy: () => Promise<ProxySnapshot>
+  openWebUsage: (groupId: number | 'all') => Promise<void>
+  getWebNetworkInterfaces: () => Promise<WebNetworkInterface[]>
   showWindowMenu: () => Promise<void>
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => () => void
   onPanelVisibilityChanged: (callback: (visible: boolean) => void) => () => void

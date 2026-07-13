@@ -1,5 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, screen, Menu, Tray } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http'
+import { networkInterfaces } from 'os'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -11,6 +13,8 @@ type AppConfig = {
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
   proxyPollIntervalSeconds: number
+  webServerPort: number
+  webNetworkAddress: string
   ballPosition: WindowPosition | null
 }
 
@@ -108,6 +112,11 @@ type UsageSummary = {
   sevenDayMax: number
 }
 
+type WebNetworkInterface = {
+  name: string
+  address: string
+}
+
 const defaultConfig: AppConfig = {
   baseUrl: '',
   adminApiKey: '',
@@ -115,6 +124,8 @@ const defaultConfig: AppConfig = {
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
   proxyPollIntervalSeconds: 300,
+  webServerPort: 37890,
+  webNetworkAddress: 'auto',
   ballPosition: null
 }
 
@@ -129,6 +140,7 @@ let collapsedDragOffset: { x: number; y: number } | null = null
 let usageRefreshTimer: ReturnType<typeof setInterval> | null = null
 let latestUsageSnapshot: Awaited<ReturnType<typeof refreshUsage>> | null = null
 let latestProxySnapshot: Awaited<ReturnType<typeof refreshProxy>> | null = null
+let webServer: Server | null = null
 
 function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
@@ -147,11 +159,39 @@ function loadConfig(): AppConfig {
       refreshIntervalSeconds: Math.max(15, Number(saved.refreshIntervalSeconds ?? 60) || 60),
       selectedProxyId: saved.selectedProxyId ?? 'none',
       proxyPollIntervalSeconds: Math.max(15, Number(saved.proxyPollIntervalSeconds ?? 300) || 300),
+      webServerPort: normalizeWebServerPort(saved.webServerPort),
+      webNetworkAddress: stringValue(saved.webNetworkAddress).trim() || 'auto',
       ballPosition: normalizeWindowPosition(saved.ballPosition)
     }
   } catch {
     return defaultConfig
   }
+}
+
+function normalizeWebServerPort(value: unknown): number {
+  const port = Number(value)
+  return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37890
+}
+
+function getWebNetworkInterfaces(): WebNetworkInterface[] {
+  const interfaces: WebNetworkInterface[] = []
+  for (const [name, addresses] of Object.entries(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === 'IPv4' && !address.internal) {
+        interfaces.push({ name, address: address.address })
+      }
+    }
+  }
+  return interfaces
+}
+
+function getLocalWebHost(): string {
+  const interfaces = getWebNetworkInterfaces()
+  const selectedAddress = loadConfig().webNetworkAddress
+  if (selectedAddress !== 'auto' && interfaces.some((networkInterface) => networkInterface.address === selectedAddress)) {
+    return selectedAddress
+  }
+  return interfaces[0]?.address ?? '127.0.0.1'
 }
 
 function normalizeWindowPosition(value: unknown): WindowPosition | null {
@@ -172,6 +212,8 @@ function saveConfig(config: AppConfig): AppConfig {
     refreshIntervalSeconds: Math.max(15, Number(config.refreshIntervalSeconds) || 60),
     selectedProxyId: config.selectedProxyId,
     proxyPollIntervalSeconds: Math.max(15, Number(config.proxyPollIntervalSeconds) || 300),
+    webServerPort: normalizeWebServerPort(config.webServerPort),
+    webNetworkAddress: config.webNetworkAddress.trim() || 'auto',
     ballPosition: normalizeWindowPosition(config.ballPosition)
   }
 
@@ -291,7 +333,17 @@ async function refreshUsage(): Promise<{
   accounts: UsageAccount[]
   summary: UsageSummary
 }> {
-  const config = requireConfig()
+  return getUsageForGroup(loadConfig().selectedGroupId)
+}
+
+async function getUsageForGroup(selectedGroupId: number | 'all'): Promise<{
+  updatedAt: string
+  selectedGroupId: number | 'all'
+  groups: ApiGroup[]
+  accounts: UsageAccount[]
+  summary: UsageSummary
+}> {
+  requireConfig()
   const [groups, accountData] = await Promise.all([
     getGroups(),
     sub2apiFetch<{ items: ApiAccount[] }>(
@@ -301,7 +353,7 @@ async function refreshUsage(): Promise<{
 
   const selectedAccounts = accountData.items.filter((account) => {
     const groupIds = account.group_ids ?? account.groups?.map((group) => group.id) ?? []
-    return config.selectedGroupId === 'all' ? true : groupIds.includes(config.selectedGroupId)
+    return selectedGroupId === 'all' ? true : groupIds.includes(selectedGroupId)
   })
 
   const accounts = await Promise.all(
@@ -319,7 +371,7 @@ async function refreshUsage(): Promise<{
 
   return {
     updatedAt: new Date().toISOString(),
-    selectedGroupId: config.selectedGroupId,
+    selectedGroupId,
     groups,
     accounts,
     summary: {
@@ -423,6 +475,169 @@ async function testSelectedProxySnapshot(): Promise<Awaited<ReturnType<typeof re
   }
   broadcastProxySnapshot(latestProxySnapshot)
   return latestProxySnapshot
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }
+    return entities[character]
+  })
+}
+
+function formatUsageTime(value: string): string {
+  if (!value) return '--'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('zh-CN')
+}
+
+function parseWebGroupId(value: string | null): number | 'all' {
+  if (!value || value === 'all') return 'all'
+  if (!/^\d+$/.test(value)) throw new Error('groupId must be a positive integer')
+
+  const groupId = Number(value)
+  if (!Number.isSafeInteger(groupId) || groupId <= 0) {
+    throw new Error('groupId must be a positive integer')
+  }
+  return groupId
+}
+
+function sendWebResponse(response: ServerResponse, status: number, content: string): void {
+  response.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store'
+  })
+  response.end(content)
+}
+
+function renderWebPage(title: string, content: string): string {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "Microsoft YaHei", sans-serif; color: #172033; background: #f5f7fb; }
+    body { max-width: 980px; margin: 0 auto; padding: 32px 20px 48px; }
+    h1 { margin: 0; font-size: 24px; } h2 { font-size: 16px; margin: 0; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    button { height: 36px; border: 0; border-radius: 6px; background: #1677ff; color: #fff; padding: 0 14px; cursor: pointer; font: inherit; }
+    .summary, article, .notice { border: 1px solid #dce2ec; background: #fff; padding: 16px; border-radius: 8px; }
+    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .metric { color: #526077; font-size: 13px; } .metric strong { display: block; color: #172033; font-size: 24px; margin-top: 4px; }
+    .accounts { display: grid; gap: 12px; } article { display: grid; gap: 12px; }
+    .heading, .usage { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+    .name { font-weight: 700; } .meta { color: #667085; font-size: 13px; margin-top: 4px; }
+    .bar { height: 8px; background: #e6eaf0; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+    .bar span { display: block; height: 100%; background: #1677ff; } .usage { font-size: 13px; color: #526077; }
+    .usage > div { min-width: 160px; } .notice { color: #526077; text-align: center; }
+    @media (max-width: 560px) { body { padding: 20px 12px; } .summary { grid-template-columns: 1fr; } .heading, .usage { align-items: start; flex-direction: column; gap: 10px; } }
+  </style>
+</head>
+<body>${content}</body>
+</html>`
+}
+
+function renderUsageWebPage(snapshot: Awaited<ReturnType<typeof refreshUsage>>): string {
+  const selectedGroupId = String(snapshot.selectedGroupId)
+  const currentGroup =
+    snapshot.selectedGroupId === 'all'
+      ? '全部分组'
+      : snapshot.groups.find((group) => group.id === snapshot.selectedGroupId)?.name ?? `分组 ${snapshot.selectedGroupId}`
+  const accounts = snapshot.accounts.length
+    ? snapshot.accounts
+        .map(
+          (account) => `<article>
+            <div class="heading"><div><div class="name">${escapeHtml(account.name)}</div><div class="meta">${escapeHtml(account.email || '--')}</div></div><div class="meta">${escapeHtml(account.status)}</div></div>
+            <div class="usage"><div>5 小时: ${account.fiveHourPercent}%<div class="bar"><span style="width:${Math.min(100, Math.max(0, account.fiveHourPercent))}%"></span></div></div><div>7 天: ${account.sevenDayPercent}%<div class="bar"><span style="width:${Math.min(100, Math.max(0, account.sevenDayPercent))}%"></span></div></div></div>
+            <div class="meta">下次重置: 5 小时 ${escapeHtml(formatUsageTime(account.fiveHourResetAt))} | 7 天 ${escapeHtml(formatUsageTime(account.sevenDayResetAt))}</div>
+          </article>`
+        )
+        .join('')
+    : '<div class="notice">当前分组没有账号。</div>'
+
+  return renderWebPage(
+    'Quota Float 用量查询',
+    `<header class="page-header"><h1>Quota Float 用量查询</h1><form method="get"><input type="hidden" name="groupId" value="${selectedGroupId}"><button type="submit">刷新</button></form></header>
+      <section class="summary"><div class="metric">当前分组<strong>${escapeHtml(currentGroup)}</strong></div><div class="metric">账号数量<strong>${snapshot.summary.accountCount}</strong></div><div class="metric">5h / 7d 平均<strong>${snapshot.summary.fiveHourAverage}% / ${snapshot.summary.sevenDayAverage}%</strong></div></section>
+      <section class="accounts">${accounts}</section>`
+  )
+}
+
+async function handleWebRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  try {
+    if (request.method !== 'GET') {
+      sendWebResponse(response, 405, renderWebPage('Method Not Allowed', '<p>Only GET requests are supported.</p>'))
+      return
+    }
+
+    const url = new URL(request.url ?? '/', 'http://localhost')
+    const groupId = parseWebGroupId(url.searchParams.get('groupId'))
+    if (url.pathname !== '/') {
+      sendWebResponse(response, 404, renderWebPage('Not Found', '<p>Not found.</p>'))
+      return
+    }
+
+    const snapshot = await getUsageForGroup(groupId)
+    if (groupId !== 'all' && !snapshot.groups.some((group) => group.id === groupId)) {
+      sendWebResponse(response, 404, renderWebPage('Group Not Found', '<p>指定的分组不存在。</p>'))
+      return
+    }
+    sendWebResponse(response, 200, renderUsageWebPage(snapshot))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '查询失败'
+    sendWebResponse(response, 400, renderWebPage('请求失败', `<p>${escapeHtml(message)}</p>`))
+  }
+}
+
+async function stopWebServer(): Promise<void> {
+  const server = webServer
+  webServer = null
+  if (!server) return
+
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+}
+
+async function restartWebServer(): Promise<void> {
+  await stopWebServer()
+  const config = loadConfig()
+  const port = config.webServerPort
+
+  try {
+    webServer = await createWebServer(port)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error
+
+    webServer = await createWebServer(0)
+    const address = webServer.address()
+    if (!address || typeof address === 'string') throw new Error('Web Server 未返回监听端口')
+
+    saveConfig({ ...config, webServerPort: address.port })
+    console.warn(`Web Server port ${port} is in use; using ${address.port} instead.`)
+  }
+}
+
+function createWebServer(port: number): Promise<Server> {
+  const server = createServer((request, response) => void handleWebRequest(request, response))
+
+  return new Promise<Server>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.close()
+      reject(error)
+    }
+    server.once('error', onError)
+    server.listen(port, '0.0.0.0', () => {
+      server.removeListener('error', onError)
+      server.on('error', (error) => console.error('Web Server error:', error))
+      resolve(server)
+    })
+  })
 }
 
 function getRendererUrl(view: 'ball' | 'panel'): string {
@@ -696,7 +911,7 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -708,10 +923,11 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('config:get', () => loadConfig())
-  ipcMain.handle('config:save', (_, config: AppConfig) => {
-    const savedConfig = saveConfig(config)
+  ipcMain.handle('config:save', async (_, config: AppConfig) => {
+    saveConfig(config)
     resetUsagePolling()
-    return savedConfig
+    await restartWebServer()
+    return loadConfig()
   })
   ipcMain.handle('groups:get', () => getGroups())
   ipcMain.handle('usage:get-latest', () => latestUsageSnapshot)
@@ -719,6 +935,18 @@ app.whenReady().then(() => {
   ipcMain.handle('proxy:get-latest', () => latestProxySnapshot)
   ipcMain.handle('proxy:refresh', () => refreshProxySnapshot())
   ipcMain.handle('proxy:test', () => testSelectedProxySnapshot())
+  ipcMain.handle('web:get-network-interfaces', () => getWebNetworkInterfaces())
+  ipcMain.handle('web:open-usage', (_, groupId: number | 'all') => {
+    const selectedGroupId = groupId === 'all' ? 'all' : Number(groupId)
+    if (selectedGroupId !== 'all' && (!Number.isSafeInteger(selectedGroupId) || selectedGroupId <= 0)) {
+      throw new Error('分组 ID 无效')
+    }
+
+    const port = loadConfig().webServerPort
+    return shell.openExternal(
+      `http://${getLocalWebHost()}:${port}/?groupId=${encodeURIComponent(String(selectedGroupId))}`
+    )
+  })
   ipcMain.handle('window:show-menu', () => showAppMenu())
   ipcMain.handle('window:show-panel', () => showPanel())
   ipcMain.handle('window:hide-panel', () => hidePanel())
@@ -734,6 +962,11 @@ app.whenReady().then(() => {
 
   if (process.platform === 'darwin') app.dock?.hide()
   createTray()
+  try {
+    await restartWebServer()
+  } catch (error) {
+    console.error('Unable to start Web Server:', error)
+  }
   createWindow()
   resetUsagePolling()
 
@@ -752,6 +985,11 @@ app.on('window-all-closed', () => {
     stopUsagePolling()
     app.quit()
   }
+})
+
+app.on('will-quit', () => {
+  stopUsagePolling()
+  void stopWebServer()
 })
 
 // In this file you can include the rest of your app's specific main process
