@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ChevronDown, ExternalLink, Eye, EyeOff, Play, RefreshCw, Save, Wifi } from '@lucide/vue'
+import {
+  AlertCircle,
+  ChevronDown,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Play,
+  RefreshCw,
+  Save,
+  Wifi
+} from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import {
@@ -11,7 +21,13 @@ import {
   NumberFieldInput
 } from './components/ui/number-field'
 import Progress from './components/ui/Progress.vue'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from './components/ui/select'
 import type {
   ApiProxy,
   AppConfig,
@@ -65,7 +81,9 @@ let removeProxyUpdatedListener: (() => void) | undefined
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
 const ballAveragePercent = computed(() => {
-  return ballMetric.value === 'fiveHour' ? fiveHourAveragePercent.value : sevenDayAveragePercent.value
+  return ballMetric.value === 'fiveHour'
+    ? fiveHourAveragePercent.value
+    : sevenDayAveragePercent.value
 })
 const ballMetricLabel = computed(() => (ballMetric.value === 'fiveHour' ? '5小时' : '7天'))
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
@@ -354,7 +372,11 @@ onBeforeUnmount(() => {
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
         :class="usageGlowActive && 'token-reservoir--glow'"
-        :style="{ '--water-level': waterLevel, '--water-color': ballTone, '--remaining-percent': `${remainingPercent}%` }"
+        :style="{
+          '--water-level': waterLevel,
+          '--water-color': ballTone,
+          '--remaining-percent': `${remainingPercent}%`
+        }"
         @click="openPanelFromBall"
         @pointerdown="startBallDrag"
         @pointermove="trackBallDrag"
@@ -377,8 +399,13 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <section v-if="isPanelView" class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card/80 shadow-2xl shadow-black/45 backdrop-blur-lg">
-      <header class="drag-region flex h-12 items-center justify-between border-b border-border px-3">
+    <section
+      v-if="isPanelView"
+      class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card/80 shadow-2xl shadow-black/45 backdrop-blur-lg"
+    >
+      <header
+        class="drag-region flex h-12 items-center justify-between border-b border-border px-3"
+      >
         <div class="min-w-0">
           <div class="text-sm font-semibold leading-4">Quota Float</div>
           <div class="text-[11px] text-muted-foreground">{{ accountCount }} accounts</div>
@@ -418,12 +445,19 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="panel-scroll flex-1 overflow-y-auto p-3">
-        <div v-if="error" class="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+        <div
+          v-if="error"
+          class="mb-3 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+        >
           <AlertCircle class="mt-0.5 h-4 w-4 shrink-0" />
           <span>{{ error }}</span>
         </div>
 
-        <form v-if="activePanelTab === 'settings'" class="space-y-3 rounded-md border border-border bg-background/55 p-3" @submit.prevent="save">
+        <form
+          v-if="activePanelTab === 'settings'"
+          class="space-y-3 rounded-md border border-border bg-background/55 p-3"
+          @submit.prevent="save"
+        >
           <label class="block space-y-1">
             <span class="text-xs text-muted-foreground">Sub2API 地址</span>
             <Input v-model="config.baseUrl" placeholder="http://127.0.0.1:37889" />
@@ -451,16 +485,22 @@ onBeforeUnmount(() => {
               </Button>
             </div>
           </label>
-          <div class="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+          <div class="space-y-3">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">Web 端口</span>
-              <Input
-                :model-value="String(config.webServerPort)"
-                type="number"
-                min="1024"
-                max="65535"
-                @update:model-value="config.webServerPort = Number($event) || 37890"
-              />
+              <NumberField
+                v-model="config.webServerPort"
+                :min="1024"
+                :max="65535"
+                :step="1"
+                :format-options="{ useGrouping: false }"
+              >
+                <NumberFieldContent>
+                  <NumberFieldDecrement />
+                  <NumberFieldInput />
+                  <NumberFieldIncrement />
+                </NumberFieldContent>
+              </NumberField>
             </label>
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">网页网卡</span>
@@ -498,7 +538,12 @@ onBeforeUnmount(() => {
             </label>
             <div class="space-y-1">
               <span class="block text-xs text-muted-foreground">刷新秒</span>
-              <NumberField v-model="refreshIntervalInput" :min="15" :step="15">
+              <NumberField
+                v-model="refreshIntervalInput"
+                :min="15"
+                :step="15"
+                :format-options="{ useGrouping: false }"
+              >
                 <NumberFieldContent>
                   <NumberFieldDecrement />
                   <NumberFieldInput />
@@ -528,7 +573,12 @@ onBeforeUnmount(() => {
             </label>
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">代理秒</span>
-              <NumberField v-model="proxyPollIntervalInput" :min="15" :step="15">
+              <NumberField
+                v-model="proxyPollIntervalInput"
+                :min="15"
+                :step="15"
+                :format-options="{ useGrouping: false }"
+              >
                 <NumberFieldContent>
                   <NumberFieldDecrement />
                   <NumberFieldInput />
@@ -543,7 +593,10 @@ onBeforeUnmount(() => {
           </Button>
         </form>
 
-        <section v-if="activePanelTab === 'proxy'" class="rounded-md border border-border bg-background/55 p-3">
+        <section
+          v-if="activePanelTab === 'proxy'"
+          class="rounded-md border border-border bg-background/55 p-3"
+        >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -557,9 +610,19 @@ onBeforeUnmount(() => {
             <div class="flex shrink-0 items-center gap-2">
               <span
                 class="rounded px-2 py-0.5 text-[11px]"
-                :class="proxySnapshot?.result?.success ? 'bg-emerald-500/15 text-emerald-300' : 'bg-secondary text-secondary-foreground'"
+                :class="
+                  proxySnapshot?.result?.success
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-secondary text-secondary-foreground'
+                "
               >
-                {{ proxySnapshot?.result ? (proxySnapshot.result.success ? '可用' : '异常') : '待监测' }}
+                {{
+                  proxySnapshot?.result
+                    ? proxySnapshot.result.success
+                      ? '可用'
+                      : '异常'
+                    : '待监测'
+                }}
               </span>
               <Button
                 size="icon"
@@ -577,17 +640,28 @@ onBeforeUnmount(() => {
           <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div class="min-w-0 rounded bg-muted/35 p-2">
               <div class="text-muted-foreground">延迟</div>
-              <div class="mt-1 truncate font-medium">{{ formatLatency(proxySnapshot?.result?.latency_ms ?? selectedProxy?.latency_ms) }}</div>
+              <div class="mt-1 truncate font-medium">
+                {{ formatLatency(proxySnapshot?.result?.latency_ms ?? selectedProxy?.latency_ms) }}
+              </div>
             </div>
             <div class="min-w-0 rounded bg-muted/35 p-2">
               <div class="text-muted-foreground">出口 IP</div>
-              <div class="mt-1 truncate font-medium">{{ proxySnapshot?.result?.ip_address ?? selectedProxy?.ip_address ?? '--' }}</div>
+              <div class="mt-1 truncate font-medium">
+                {{ proxySnapshot?.result?.ip_address ?? selectedProxy?.ip_address ?? '--' }}
+              </div>
             </div>
           </div>
           <div class="mt-2 space-y-1 text-[11px] text-muted-foreground">
             <div class="truncate">{{ proxyEndpoint(selectedProxy) }}</div>
             <div class="truncate">{{ proxyLocation(selectedProxy) }}</div>
-            <div class="truncate">{{ proxySnapshot?.result?.message ?? selectedProxy?.quality_summary ?? selectedProxy?.latency_message ?? '暂无结果' }}</div>
+            <div class="truncate">
+              {{
+                proxySnapshot?.result?.message ??
+                selectedProxy?.quality_summary ??
+                selectedProxy?.latency_message ??
+                '暂无结果'
+              }}
+            </div>
           </div>
         </section>
 
@@ -595,54 +669,93 @@ onBeforeUnmount(() => {
           <div class="grid grid-cols-2 gap-2">
             <div class="rounded-md border border-border bg-background/55 p-3">
               <div class="text-xs text-muted-foreground">5h 平均</div>
-              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.fiveHourAverage ?? 0 }}%</div>
-              <Progress class="mt-2" :value="snapshot?.summary.fiveHourAverage ?? 0" :tone="progressTone(snapshot?.summary.fiveHourAverage ?? 0)" />
+              <div class="mt-1 text-xl font-semibold">
+                {{ snapshot?.summary.fiveHourAverage ?? 0 }}%
+              </div>
+              <Progress
+                class="mt-2"
+                :value="snapshot?.summary.fiveHourAverage ?? 0"
+                :tone="progressTone(snapshot?.summary.fiveHourAverage ?? 0)"
+              />
             </div>
             <div class="rounded-md border border-border bg-background/55 p-3">
               <div class="text-xs text-muted-foreground">7d 平均</div>
-              <div class="mt-1 text-xl font-semibold">{{ snapshot?.summary.sevenDayAverage ?? 0 }}%</div>
-              <Progress class="mt-2" :value="snapshot?.summary.sevenDayAverage ?? 0" :tone="progressTone(snapshot?.summary.sevenDayAverage ?? 0)" />
+              <div class="mt-1 text-xl font-semibold">
+                {{ snapshot?.summary.sevenDayAverage ?? 0 }}%
+              </div>
+              <Progress
+                class="mt-2"
+                :value="snapshot?.summary.sevenDayAverage ?? 0"
+                :tone="progressTone(snapshot?.summary.sevenDayAverage ?? 0)"
+              />
             </div>
           </div>
 
           <div class="mt-3 space-y-2">
-            <article v-for="account in snapshot?.accounts ?? []" :key="account.id" class="rounded-md border border-border bg-background/55 p-3">
+            <article
+              v-for="account in snapshot?.accounts ?? []"
+              :key="account.id"
+              class="rounded-md border border-border bg-background/55 p-3"
+            >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="truncate text-sm font-medium">{{ account.name }}</div>
-                  <div class="truncate text-xs text-muted-foreground">{{ accountLabel(account) }}</div>
+                  <div class="truncate text-xs text-muted-foreground">
+                    {{ accountLabel(account) }}
+                  </div>
                 </div>
-                <span class="rounded bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground">{{ account.status }}</span>
+                <span
+                  class="rounded bg-secondary px-2 py-0.5 text-[11px] text-secondary-foreground"
+                  >{{ account.status }}</span
+                >
               </div>
               <div class="mt-3 grid gap-3">
                 <div>
                   <div class="mb-1 flex justify-between text-xs">
                     <span class="text-muted-foreground">5h</span>
-                    <span>{{ account.fiveHourPercent }}% · {{ formatDate(account.fiveHourResetAt) }}</span>
+                    <span
+                      >{{ account.fiveHourPercent }}% ·
+                      {{ formatDate(account.fiveHourResetAt) }}</span
+                    >
                   </div>
-                  <Progress :value="account.fiveHourPercent" :tone="progressTone(account.fiveHourPercent)" />
+                  <Progress
+                    :value="account.fiveHourPercent"
+                    :tone="progressTone(account.fiveHourPercent)"
+                  />
                 </div>
                 <div>
                   <div class="mb-1 flex justify-between text-xs">
                     <span class="text-muted-foreground">7d</span>
-                    <span>{{ account.sevenDayPercent }}% · {{ formatDate(account.sevenDayResetAt) }}</span>
+                    <span
+                      >{{ account.sevenDayPercent }}% ·
+                      {{ formatDate(account.sevenDayResetAt) }}</span
+                    >
                   </div>
-                  <Progress :value="account.sevenDayPercent" :tone="progressTone(account.sevenDayPercent)" />
+                  <Progress
+                    :value="account.sevenDayPercent"
+                    :tone="progressTone(account.sevenDayPercent)"
+                  />
                 </div>
               </div>
               <div class="mt-2 truncate text-[11px] text-muted-foreground">
-                {{ account.groupNames.join(' / ') || '无分组' }} · 更新 {{ formatDate(account.updatedAt) }}
+                {{ account.groupNames.join(' / ') || '无分组' }} · 更新
+                {{ formatDate(account.updatedAt) }}
               </div>
             </article>
 
-            <div v-if="snapshot && snapshot.accounts.length === 0" class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            <div
+              v-if="snapshot && snapshot.accounts.length === 0"
+              class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
+            >
               当前分组没有账号
             </div>
           </div>
         </div>
       </div>
 
-      <footer class="flex h-10 items-center border-t border-border px-3 text-[11px] text-muted-foreground">
+      <footer
+        class="flex h-10 items-center border-t border-border px-3 text-[11px] text-muted-foreground"
+      >
         <span>更新 {{ formatDate(snapshot?.updatedAt ?? '') }}</span>
       </footer>
     </section>
