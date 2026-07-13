@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Palette,
   Play,
   RefreshCw,
   Save,
@@ -13,6 +14,7 @@ import {
 } from '@lucide/vue'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
+import { ColorPicker } from './components/ui/color-picker'
 import {
   NumberField,
   NumberFieldContent,
@@ -40,6 +42,7 @@ import type {
 const defaultConfig: AppConfig = {
   baseUrl: '',
   adminApiKey: '',
+  themeColor: '#20c997',
   selectedGroupId: 'all',
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
@@ -68,6 +71,7 @@ const webNetworkInterfaces = ref<WebNetworkInterface[]>([])
 const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 const usageGlowActive = ref(false)
 const apiKeyVisible = ref(false)
+const themeColors = ['#20c997', '#38bdf8', '#f0b84b', '#fb7185', '#a78bfa', '#f472b6']
 let proxyRefreshTimer: number | undefined
 let usageGlowTimer: number | undefined
 let dragPointerId: number | null = null
@@ -75,6 +79,7 @@ let dragStartX = 0
 let dragStartY = 0
 let didDragBall = false
 let removePanelVisibilityListener: (() => void) | undefined
+let removeConfigUpdatedListener: (() => void) | undefined
 let removeUsageUpdatedListener: (() => void) | undefined
 let removeProxyUpdatedListener: (() => void) | undefined
 
@@ -112,7 +117,7 @@ const proxyStatusLabel = computed(() => {
 const ballTone = computed(() => {
   if (ballAveragePercent.value >= 90) return '#ff5d5d'
   if (ballAveragePercent.value >= 70) return '#f0b84b'
-  return '#20c997'
+  return config.value.themeColor
 })
 
 const usedPercent = computed(() => Math.min(100, Math.max(0, ballAveragePercent.value)))
@@ -127,6 +132,36 @@ function progressTone(value: number): 'good' | 'warn' | 'danger' {
   if (value >= 90) return 'danger'
   if (value >= 70) return 'warn'
   return 'good'
+}
+
+function normalizeThemeColor(value: string): string | null {
+  const color = value.trim()
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : null
+}
+
+function getThemeForeground(themeColor: string): string {
+  const channelLuminance = (value: number): number => {
+    const channel = value / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  const luminance =
+    channelLuminance(Number.parseInt(themeColor.slice(1, 3), 16)) * 0.2126 +
+    channelLuminance(Number.parseInt(themeColor.slice(3, 5), 16)) * 0.7152 +
+    channelLuminance(Number.parseInt(themeColor.slice(5, 7), 16)) * 0.0722
+  return luminance >= 0.19 ? '#111318' : '#ffffff'
+}
+
+function applyThemeColor(value: string): void {
+  const themeColor = normalizeThemeColor(value) ?? defaultConfig.themeColor
+  document.documentElement.style.setProperty('--primary', themeColor)
+  document.documentElement.style.setProperty('--ring', themeColor)
+  document.documentElement.style.setProperty('--primary-foreground', getThemeForeground(themeColor))
+}
+
+function setThemeColor(value: string): void {
+  const themeColor = normalizeThemeColor(value)
+  if (!themeColor) return
+  config.value.themeColor = themeColor
 }
 
 function formatDate(value: string): string {
@@ -303,6 +338,7 @@ async function save(): Promise<void> {
     config.value = await window.api.saveConfig({
       baseUrl: config.value.baseUrl,
       adminApiKey: config.value.adminApiKey,
+      themeColor: config.value.themeColor,
       selectedGroupId,
       refreshIntervalSeconds: refreshIntervalInput.value || 60,
       selectedProxyId:
@@ -334,10 +370,19 @@ watch(
   () => resetProxyTimer()
 )
 
+watch(
+  () => config.value.themeColor,
+  (value) => applyThemeColor(value),
+  { immediate: true }
+)
+
 onMounted(async () => {
   removePanelVisibilityListener = window.api.onPanelVisibilityChanged((value) => {
     panelVisible.value = value
     if (isPanelView && value) void refreshActiveTab()
+  })
+  removeConfigUpdatedListener = window.api.onConfigUpdated((value) => {
+    setThemeColor(value.themeColor)
   })
   removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
     snapshot.value = value
@@ -359,6 +404,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   removePanelVisibilityListener?.()
+  removeConfigUpdatedListener?.()
   removeUsageUpdatedListener?.()
   removeProxyUpdatedListener?.()
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
@@ -485,6 +531,28 @@ onBeforeUnmount(() => {
               </Button>
             </div>
           </label>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Palette class="h-3.5 w-3.5" />
+              应用主题色
+            </div>
+            <div class="grid grid-cols-[repeat(6,28px)] gap-2">
+              <button
+                v-for="themeColor in themeColors"
+                :key="themeColor"
+                type="button"
+                class="no-drag h-7 w-7 shrink-0 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :class="
+                  config.themeColor === themeColor ? 'border-white shadow-sm' : 'border-white/15'
+                "
+                :style="{ backgroundColor: themeColor }"
+                :aria-label="`使用主题色 ${themeColor}`"
+                :title="themeColor"
+                @click="setThemeColor(themeColor)"
+              />
+            </div>
+            <ColorPicker :model-value="config.themeColor" @update:model-value="setThemeColor" />
+          </div>
           <div class="space-y-3">
             <label class="block space-y-1">
               <span class="text-xs text-muted-foreground">Web 端口</span>

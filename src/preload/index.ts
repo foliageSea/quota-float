@@ -4,6 +4,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 export type AppConfig = {
   baseUrl: string
   adminApiKey: string
+  themeColor: string
   selectedGroupId: number | 'all'
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
@@ -117,13 +118,20 @@ const api = {
     ipcRenderer.on('window:panel-visibility-changed', listener)
     return () => ipcRenderer.removeListener('window:panel-visibility-changed', listener)
   },
+  onConfigUpdated: (callback: (config: AppConfig) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, config: AppConfig): void => callback(config)
+    ipcRenderer.on('config:updated', listener)
+    return () => ipcRenderer.removeListener('config:updated', listener)
+  },
   onUsageUpdated: (callback: (snapshot: UsageSnapshot) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, snapshot: UsageSnapshot): void => callback(snapshot)
+    const listener = (_: Electron.IpcRendererEvent, snapshot: UsageSnapshot): void =>
+      callback(snapshot)
     ipcRenderer.on('usage:updated', listener)
     return () => ipcRenderer.removeListener('usage:updated', listener)
   },
   onProxyUpdated: (callback: (snapshot: ProxySnapshot) => void) => {
-    const listener = (_: Electron.IpcRendererEvent, snapshot: ProxySnapshot): void => callback(snapshot)
+    const listener = (_: Electron.IpcRendererEvent, snapshot: ProxySnapshot): void =>
+      callback(snapshot)
     ipcRenderer.on('proxy:updated', listener)
     return () => ipcRenderer.removeListener('proxy:updated', listener)
   },

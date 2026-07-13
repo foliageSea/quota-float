@@ -1,5 +1,11 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { ApiGroup, AppConfig, ProxySnapshot, UsageSnapshot, WebNetworkInterface } from './index'
+import type {
+  ApiGroup,
+  AppConfig,
+  ProxySnapshot,
+  UsageSnapshot,
+  WebNetworkInterface
+} from './index'
 
 export type TokenBallAPI = {
   getConfig: () => Promise<AppConfig>
@@ -15,6 +21,7 @@ export type TokenBallAPI = {
   showWindowMenu: () => Promise<void>
   onPanelExpandedChanged: (callback: (expanded: boolean) => void) => () => void
   onPanelVisibilityChanged: (callback: (visible: boolean) => void) => () => void
+  onConfigUpdated: (callback: (config: AppConfig) => void) => () => void
   onUsageUpdated: (callback: (snapshot: UsageSnapshot) => void) => () => void
   onProxyUpdated: (callback: (snapshot: ProxySnapshot) => void) => () => void
   setPanelExpanded: (expanded: boolean) => Promise<void>

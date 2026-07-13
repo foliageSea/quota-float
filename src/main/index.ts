@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, screen, Menu, Tray } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http'
 import { networkInterfaces } from 'os'
@@ -9,6 +9,7 @@ import icon from '../../resources/icon.png?asset'
 type AppConfig = {
   baseUrl: string
   adminApiKey: string
+  themeColor: string
   selectedGroupId: number | 'all'
   refreshIntervalSeconds: number
   selectedProxyId: number | 'none'
@@ -120,6 +121,7 @@ type WebNetworkInterface = {
 const defaultConfig: AppConfig = {
   baseUrl: '',
   adminApiKey: '',
+  themeColor: '#20c997',
   selectedGroupId: 'all',
   refreshIntervalSeconds: 60,
   selectedProxyId: 'none',
@@ -155,6 +157,7 @@ function loadConfig(): AppConfig {
     return {
       ...defaultConfig,
       ...saved,
+      themeColor: normalizeThemeColor(saved.themeColor),
       selectedGroupId: saved.selectedGroupId ?? 'all',
       refreshIntervalSeconds: Math.max(15, Number(saved.refreshIntervalSeconds ?? 60) || 60),
       selectedProxyId: saved.selectedProxyId ?? 'none',
@@ -173,6 +176,24 @@ function normalizeWebServerPort(value: unknown): number {
   return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : 37890
 }
 
+function normalizeThemeColor(value: unknown): string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value.trim())
+    ? value.trim().toLowerCase()
+    : defaultConfig.themeColor
+}
+
+function getThemeForeground(themeColor: string): string {
+  const channelLuminance = (value: number): number => {
+    const channel = value / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  const luminance =
+    channelLuminance(Number.parseInt(themeColor.slice(1, 3), 16)) * 0.2126 +
+    channelLuminance(Number.parseInt(themeColor.slice(3, 5), 16)) * 0.7152 +
+    channelLuminance(Number.parseInt(themeColor.slice(5, 7), 16)) * 0.0722
+  return luminance >= 0.19 ? '#111318' : '#ffffff'
+}
+
 function getWebNetworkInterfaces(): WebNetworkInterface[] {
   const interfaces: WebNetworkInterface[] = []
   for (const [name, addresses] of Object.entries(networkInterfaces())) {
@@ -188,7 +209,10 @@ function getWebNetworkInterfaces(): WebNetworkInterface[] {
 function getLocalWebHost(): string {
   const interfaces = getWebNetworkInterfaces()
   const selectedAddress = loadConfig().webNetworkAddress
-  if (selectedAddress !== 'auto' && interfaces.some((networkInterface) => networkInterface.address === selectedAddress)) {
+  if (
+    selectedAddress !== 'auto' &&
+    interfaces.some((networkInterface) => networkInterface.address === selectedAddress)
+  ) {
     return selectedAddress
   }
   return interfaces[0]?.address ?? '127.0.0.1'
@@ -208,6 +232,7 @@ function saveConfig(config: AppConfig): AppConfig {
   const normalized: AppConfig = {
     baseUrl: config.baseUrl.trim().replace(/\/+$/, ''),
     adminApiKey: config.adminApiKey.trim(),
+    themeColor: normalizeThemeColor(config.themeColor),
     selectedGroupId: config.selectedGroupId,
     refreshIntervalSeconds: Math.max(15, Number(config.refreshIntervalSeconds) || 60),
     selectedProxyId: config.selectedProxyId,
@@ -237,7 +262,10 @@ async function sub2apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const config = requireConfig()
   const url = new URL(path, `${config.baseUrl}/`)
   if (!url.searchParams.has('timezone')) {
-    url.searchParams.set('timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai')
+    url.searchParams.set(
+      'timezone',
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
+    )
   }
 
   const authHeaders = getAuthHeaderCandidates(config.adminApiKey)
@@ -422,6 +450,12 @@ function broadcastProxySnapshot(snapshot: Awaited<ReturnType<typeof refreshProxy
   })
 }
 
+function broadcastConfig(config: AppConfig): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send('config:updated', config)
+  })
+}
+
 async function refreshUsageSnapshot(): Promise<Awaited<ReturnType<typeof refreshUsage>>> {
   latestUsageSnapshot = await refreshUsage()
   broadcastUsageSnapshot(latestUsageSnapshot)
@@ -516,6 +550,8 @@ function sendWebResponse(response: ServerResponse, status: number, content: stri
 }
 
 function renderWebPage(title: string, content: string): string {
+  const themeColor = loadConfig().themeColor
+  const themeForeground = getThemeForeground(themeColor)
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -523,11 +559,11 @@ function renderWebPage(title: string, content: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <style>
-    :root { color-scheme: light; font-family: Inter, "Microsoft YaHei", sans-serif; color: #172033; background: #f5f7fb; }
+    :root { color-scheme: light; font-family: Inter, "Microsoft YaHei", sans-serif; color: #172033; background: #f5f7fb; --theme-color: ${themeColor}; --theme-foreground: ${themeForeground}; }
     body { max-width: 980px; margin: 0 auto; padding: 32px 20px 48px; }
     h1 { margin: 0; font-size: 24px; } h2 { font-size: 16px; margin: 0; }
     .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-    button { height: 36px; border: 0; border-radius: 6px; background: #1677ff; color: #fff; padding: 0 14px; cursor: pointer; font: inherit; }
+    button { height: 36px; border: 0; border-radius: 6px; background: var(--theme-color); color: var(--theme-foreground); padding: 0 14px; cursor: pointer; font: inherit; }
     .summary, article, .notice { border: 1px solid #dce2ec; background: #fff; padding: 16px; border-radius: 8px; }
     .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
     .metric { color: #526077; font-size: 13px; } .metric strong { display: block; color: #172033; font-size: 24px; margin-top: 4px; }
@@ -535,7 +571,7 @@ function renderWebPage(title: string, content: string): string {
     .heading, .usage { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
     .name { font-weight: 700; } .meta { color: #667085; font-size: 13px; margin-top: 4px; }
     .bar { height: 8px; background: #e6eaf0; border-radius: 4px; overflow: hidden; margin-top: 6px; }
-    .bar span { display: block; height: 100%; background: #1677ff; } .usage { font-size: 13px; color: #526077; }
+    .bar span { display: block; height: 100%; background: var(--theme-color); } .usage { font-size: 13px; color: #526077; }
     .usage > div { min-width: 160px; } .notice { color: #526077; text-align: center; }
     @media (max-width: 560px) { body { padding: 20px 12px; } .summary { grid-template-columns: 1fr; } .heading, .usage { align-items: start; flex-direction: column; gap: 10px; } }
   </style>
@@ -549,7 +585,8 @@ function renderUsageWebPage(snapshot: Awaited<ReturnType<typeof refreshUsage>>):
   const currentGroup =
     snapshot.selectedGroupId === 'all'
       ? '全部分组'
-      : snapshot.groups.find((group) => group.id === snapshot.selectedGroupId)?.name ?? `分组 ${snapshot.selectedGroupId}`
+      : (snapshot.groups.find((group) => group.id === snapshot.selectedGroupId)?.name ??
+        `分组 ${snapshot.selectedGroupId}`)
   const accounts = snapshot.accounts.length
     ? snapshot.accounts
         .map(
@@ -573,7 +610,11 @@ function renderUsageWebPage(snapshot: Awaited<ReturnType<typeof refreshUsage>>):
 async function handleWebRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   try {
     if (request.method !== 'GET') {
-      sendWebResponse(response, 405, renderWebPage('Method Not Allowed', '<p>Only GET requests are supported.</p>'))
+      sendWebResponse(
+        response,
+        405,
+        renderWebPage('Method Not Allowed', '<p>Only GET requests are supported.</p>')
+      )
       return
     }
 
@@ -803,7 +844,12 @@ function showAppMenu(): void {
 function createTray(): void {
   if (tray) return
 
-  tray = new Tray(icon)
+  const trayIcon =
+    process.platform === 'darwin'
+      ? nativeImage.createFromPath(icon).resize({ width: 18, height: 18, quality: 'best' })
+      : icon
+
+  tray = new Tray(trayIcon)
   tray.setToolTip('Quota Float')
   tray.setContextMenu(createAppMenu())
   tray.on('right-click', showAppMenu)
@@ -924,7 +970,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('config:get', () => loadConfig())
   ipcMain.handle('config:save', async (_, config: AppConfig) => {
-    saveConfig(config)
+    const savedConfig = saveConfig(config)
+    broadcastConfig(savedConfig)
     resetUsagePolling()
     await restartWebServer()
     return loadConfig()
@@ -938,7 +985,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('web:get-network-interfaces', () => getWebNetworkInterfaces())
   ipcMain.handle('web:open-usage', (_, groupId: number | 'all') => {
     const selectedGroupId = groupId === 'all' ? 'all' : Number(groupId)
-    if (selectedGroupId !== 'all' && (!Number.isSafeInteger(selectedGroupId) || selectedGroupId <= 0)) {
+    if (
+      selectedGroupId !== 'all' &&
+      (!Number.isSafeInteger(selectedGroupId) || selectedGroupId <= 0)
+    ) {
       throw new Error('分组 ID 无效')
     }
 
