@@ -401,7 +401,7 @@ onBeforeUnmount(() => {
 
     <section
       v-if="isPanelView"
-      class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card/80 shadow-2xl shadow-black/45 backdrop-blur-lg"
+      class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-black shadow-2xl shadow-black/45 backdrop-blur-lg"
     >
       <header
         class="drag-region flex h-12 items-center justify-between border-b border-border px-3"
