@@ -55,6 +55,11 @@ export type UsageSnapshot = {
     sevenDayAverage: number
     sevenDayMax: number
   }
+  todayStats: {
+    requests: number
+    tokens: number
+    cost: number
+  }
 }
 
 export type ApiProxy = {

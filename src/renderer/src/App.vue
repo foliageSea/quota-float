@@ -93,6 +93,13 @@ const ballAveragePercent = computed(() => {
 const ballMetricLabel = computed(() => (ballMetric.value === 'fiveHour' ? '5小时' : '7天'))
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
 const groups = computed(() => snapshot.value?.groups ?? [])
+const selectedGroupName = computed(() => {
+  if (config.value.selectedGroupId === 'all') return '全部分组'
+  return (
+    groups.value.find((group) => group.id === Number(config.value.selectedGroupId))?.name ??
+    `分组 ${config.value.selectedGroupId}`
+  )
+})
 const proxies = computed(() => proxySnapshot.value?.proxies ?? [])
 const selectedProxy = computed<ApiProxy | null>(() => {
   const selectedProxyId = config.value.selectedProxyId
@@ -192,6 +199,19 @@ function proxyEndpoint(proxy: ApiProxy | null): string {
 
 function formatLatency(value: number | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${value}ms` : '--'
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat('zh-CN').format(value)
+}
+
+function formatTokens(value: number): string {
+  const millions = value / 1_000_000
+  return `${millions.toFixed(millions >= 10 ? 1 : 2)}M`
+}
+
+function formatCost(value: number): string {
+  return `$${value.toFixed(4)}`
 }
 
 async function setExpanded(value: boolean): Promise<void> {
@@ -382,6 +402,9 @@ onMounted(async () => {
     if (isPanelView && value) void refreshActiveTab()
   })
   removeConfigUpdatedListener = window.api.onConfigUpdated((value) => {
+    config.value = { ...value }
+    refreshIntervalInput.value = value.refreshIntervalSeconds
+    proxyPollIntervalInput.value = value.proxyPollIntervalSeconds
     setThemeColor(value.themeColor)
   })
   removeUsageUpdatedListener = window.api.onUsageUpdated((value) => {
@@ -414,7 +437,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="h-full w-full overflow-hidden text-foreground" :class="isPanelView && 'p-1'">
-    <div v-if="isBallView" class="relative flex h-[86px] w-[86px] items-center justify-center">
+    <div v-if="isBallView" class="relative flex h-[86px] w-full items-center gap-2 px-1">
       <button
         class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
         :class="usageGlowActive && 'token-reservoir--glow'"
@@ -438,11 +461,42 @@ onBeforeUnmount(() => {
         </span>
       </button>
       <div
-        class="absolute bottom-1 right-1 z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
+        class="absolute bottom-1 left-[62px] z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
         :style="{ color: proxyStatusTone }"
       >
         {{ proxyStatusLabel }}
       </div>
+      <section
+        class="ball-stats flex h-[72px] min-w-0 flex-1 flex-col justify-center rounded-lg border border-white/10 bg-black/70 px-3 text-white shadow-xl shadow-black/30"
+        aria-label="今日统计"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <span class="truncate text-[11px] font-medium text-white/80">{{
+            selectedGroupName
+          }}</span>
+          <span class="shrink-0 text-[9px] text-white/45">今日</span>
+        </div>
+        <div class="mt-2 space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[9px] text-white/45">请求</div>
+            <div class="truncate text-[12px] font-semibold">
+              {{ formatNumber(snapshot?.todayStats.requests ?? 0) }}
+            </div>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[9px] text-white/45">Token</div>
+            <div class="truncate text-[12px] font-semibold">
+              {{ formatTokens(snapshot?.todayStats.tokens ?? 0) }}
+            </div>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[9px] text-white/45">费用</div>
+            <div class="truncate text-[12px] font-semibold">
+              {{ formatCost(snapshot?.todayStats.cost ?? 0) }}
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <section

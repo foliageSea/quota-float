@@ -57,6 +57,20 @@ type ApiAccountUsage = {
   seven_day?: ApiUsageWindow
 }
 
+type ApiTodayAccountStats = {
+  requests?: number
+  tokens?: number
+  cost?: number
+  standard_cost?: number
+  user_cost?: number
+}
+
+type TodayStats = {
+  requests: number
+  tokens: number
+  cost: number
+}
+
 type ApiProxy = {
   id: number
   name: string
@@ -132,6 +146,7 @@ const defaultConfig: AppConfig = {
 }
 
 const collapsedSize = 86
+const collapsedWindowWidth = 270
 
 let mainWindow: BrowserWindow | null = null
 let ballWindow: BrowserWindow | null = null
@@ -354,12 +369,35 @@ async function getAccountUsage(accountId: number): Promise<ApiAccountUsage> {
   return sub2apiFetch<ApiAccountUsage>(`api/v1/admin/accounts/${accountId}/usage`)
 }
 
+async function getTodayStats(accountIds: number[]): Promise<TodayStats> {
+  if (accountIds.length === 0) return { requests: 0, tokens: 0, cost: 0 }
+
+  const data = await sub2apiFetch<{ stats?: Record<string, ApiTodayAccountStats> }>(
+    'api/v1/admin/accounts/today-stats/batch',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_ids: accountIds })
+    }
+  )
+
+  return Object.values(data.stats ?? {}).reduce<TodayStats>(
+    (total, stats) => ({
+      requests: total.requests + numberValue(stats.requests),
+      tokens: total.tokens + numberValue(stats.tokens),
+      cost: total.cost + numberValue(stats.user_cost ?? stats.cost)
+    }),
+    { requests: 0, tokens: 0, cost: 0 }
+  )
+}
+
 async function refreshUsage(): Promise<{
   updatedAt: string
   selectedGroupId: number | 'all'
   groups: ApiGroup[]
   accounts: UsageAccount[]
   summary: UsageSummary
+  todayStats: TodayStats
 }> {
   return getUsageForGroup(loadConfig().selectedGroupId)
 }
@@ -370,6 +408,7 @@ async function getUsageForGroup(selectedGroupId: number | 'all'): Promise<{
   groups: ApiGroup[]
   accounts: UsageAccount[]
   summary: UsageSummary
+  todayStats: TodayStats
 }> {
   requireConfig()
   const [groups, accountData] = await Promise.all([
@@ -384,15 +423,18 @@ async function getUsageForGroup(selectedGroupId: number | 'all'): Promise<{
     return selectedGroupId === 'all' ? true : groupIds.includes(selectedGroupId)
   })
 
-  const accounts = await Promise.all(
-    selectedAccounts.map(async (account) => {
-      try {
-        return mapAccount(account, await getAccountUsage(account.id))
-      } catch {
-        return mapAccount(account)
-      }
-    })
-  )
+  const [accounts, todayStats] = await Promise.all([
+    Promise.all(
+      selectedAccounts.map(async (account) => {
+        try {
+          return mapAccount(account, await getAccountUsage(account.id))
+        } catch {
+          return mapAccount(account)
+        }
+      })
+    ),
+    getTodayStats(selectedAccounts.map((account) => account.id))
+  ])
 
   const fiveHourValues = accounts.map((account) => account.fiveHourPercent)
   const sevenDayValues = accounts.map((account) => account.sevenDayPercent)
@@ -408,7 +450,8 @@ async function getUsageForGroup(selectedGroupId: number | 'all'): Promise<{
       fiveHourMax: Math.max(0, ...fiveHourValues),
       sevenDayAverage: average(sevenDayValues),
       sevenDayMax: Math.max(0, ...sevenDayValues)
-    }
+    },
+    todayStats
   }
 }
 
@@ -698,11 +741,14 @@ function loadRenderer(window: BrowserWindow, view: 'ball' | 'panel'): void {
   }
 }
 
-function clampPositionToWorkArea(position: WindowPosition, size = collapsedSize): WindowPosition {
-  const target = { x: position.x, y: position.y, width: size, height: size }
+function clampPositionToWorkArea(
+  position: WindowPosition,
+  width = collapsedWindowWidth
+): WindowPosition {
+  const target = { x: position.x, y: position.y, width, height: collapsedSize }
   const { workArea } = screen.getDisplayMatching(target)
-  const maxX = workArea.x + workArea.width - size
-  const maxY = workArea.y + workArea.height - size
+  const maxX = workArea.x + workArea.width - width
+  const maxY = workArea.y + workArea.height - collapsedSize
 
   return {
     x: Math.round(Math.min(Math.max(position.x, workArea.x), maxX)),
@@ -713,7 +759,7 @@ function clampPositionToWorkArea(position: WindowPosition, size = collapsedSize)
 function getDefaultBallPosition(): WindowPosition {
   const { workArea } = screen.getPrimaryDisplay()
   return {
-    x: workArea.x + workArea.width - collapsedSize - 24,
+    x: workArea.x + workArea.width - collapsedWindowWidth - 24,
     y: workArea.y + workArea.height - collapsedSize - 64
   }
 }
@@ -807,7 +853,7 @@ function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
       {
         x: Math.round(point.x - collapsedDragOffset.x),
         y: Math.round(point.y - collapsedDragOffset.y),
-        width: collapsedSize,
+        width: collapsedWindowWidth,
         height: collapsedSize
       },
       false
@@ -868,13 +914,13 @@ function createBallWindow(): void {
   const position = getSavedBallPosition()
 
   const window = new BrowserWindow({
-    width: collapsedSize,
+    width: collapsedWindowWidth,
     height: collapsedSize,
     x: position.x,
     y: position.y,
-    minWidth: collapsedSize,
+    minWidth: collapsedWindowWidth,
     minHeight: collapsedSize,
-    maxWidth: collapsedSize,
+    maxWidth: collapsedWindowWidth,
     maxHeight: collapsedSize,
     show: false,
     frame: false,
