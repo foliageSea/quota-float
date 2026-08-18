@@ -470,28 +470,28 @@ onBeforeUnmount(() => {
         class="ball-stats flex h-[72px] min-w-0 flex-1 flex-col justify-center rounded-lg border border-white/10 bg-black/70 px-3 text-white shadow-xl shadow-black/30"
         aria-label="今日统计"
       >
-        <div class="flex items-center justify-between gap-2">
-          <span class="truncate text-[11px] font-medium text-white/80">{{
+        <div class="flex items-center justify-between gap-2 leading-3">
+          <span class="truncate text-[10px] font-medium text-white/80">{{
             selectedGroupName
           }}</span>
           <span class="shrink-0 text-[9px] text-white/45">今日</span>
         </div>
-        <div class="mt-2 space-y-1">
-          <div class="flex items-center justify-between gap-2">
+        <div class="mt-1 space-y-0.5">
+          <div class="flex h-3 items-center justify-between gap-2 leading-3">
             <div class="text-[9px] text-white/45">请求</div>
-            <div class="truncate text-[12px] font-semibold">
+            <div class="truncate text-[11px] font-semibold leading-3">
               {{ formatNumber(snapshot?.todayStats.requests ?? 0) }}
             </div>
           </div>
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex h-3 items-center justify-between gap-2 leading-3">
             <div class="text-[9px] text-white/45">Token</div>
-            <div class="truncate text-[12px] font-semibold">
+            <div class="truncate text-[11px] font-semibold leading-3">
               {{ formatTokens(snapshot?.todayStats.tokens ?? 0) }}
             </div>
           </div>
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex h-3 items-center justify-between gap-2 leading-3">
             <div class="text-[9px] text-white/45">费用</div>
-            <div class="truncate text-[12px] font-semibold">
+            <div class="truncate text-[11px] font-semibold leading-3">
               {{ formatCost(snapshot?.todayStats.cost ?? 0) }}
             </div>
           </div>
