@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertCircle,
   ChevronDown,
+  Clock3,
   ExternalLink,
   Eye,
   EyeOff,
@@ -12,6 +13,7 @@ import {
   Save,
   Wifi
 } from '@lucide/vue'
+import codexIcon from './assets/codex.svg'
 import Button from './components/ui/Button.vue'
 import Input from './components/ui/Input.vue'
 import { ColorPicker } from './components/ui/color-picker'
@@ -68,12 +70,13 @@ const proxyPollIntervalInput = ref(defaultConfig.proxyPollIntervalSeconds)
 const snapshot = ref<UsageSnapshot | null>(null)
 const proxySnapshot = ref<ProxySnapshot | null>(null)
 const webNetworkInterfaces = ref<WebNetworkInterface[]>([])
-const ballMetric = ref<'fiveHour' | 'sevenDay'>('fiveHour')
 const usageGlowActive = ref(false)
 const apiKeyVisible = ref(false)
+const currentTime = ref('')
 const themeColors = ['#20c997', '#38bdf8', '#f0b84b', '#fb7185', '#a78bfa', '#f472b6']
 let proxyRefreshTimer: number | undefined
 let usageGlowTimer: number | undefined
+let clockTimer: number | undefined
 let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
@@ -85,12 +88,8 @@ let removeProxyUpdatedListener: (() => void) | undefined
 
 const fiveHourAveragePercent = computed(() => snapshot.value?.summary.fiveHourAverage ?? 0)
 const sevenDayAveragePercent = computed(() => snapshot.value?.summary.sevenDayAverage ?? 0)
-const ballAveragePercent = computed(() => {
-  return ballMetric.value === 'fiveHour'
-    ? fiveHourAveragePercent.value
-    : sevenDayAveragePercent.value
-})
-const ballMetricLabel = computed(() => (ballMetric.value === 'fiveHour' ? '5小时' : '7天'))
+const fiveHourRemainingPercent = computed(() => 100 - clampPercent(fiveHourAveragePercent.value))
+const sevenDayRemainingPercent = computed(() => 100 - clampPercent(sevenDayAveragePercent.value))
 const accountCount = computed(() => snapshot.value?.summary.accountCount ?? 0)
 const groups = computed(() => snapshot.value?.groups ?? [])
 const selectedGroupName = computed(() => {
@@ -121,24 +120,48 @@ const proxyStatusLabel = computed(() => {
   if (proxySnapshot.value?.result) return 'ERR'
   return selectedProxy.value ? 'IP' : '--'
 })
-const ballTone = computed(() => {
-  if (ballAveragePercent.value >= 90) return '#ff5d5d'
-  if (ballAveragePercent.value >= 70) return '#f0b84b'
-  return config.value.themeColor
-})
-
-const usedPercent = computed(() => Math.min(100, Math.max(0, ballAveragePercent.value)))
-
-const remainingPercent = computed(() => 100 - usedPercent.value)
-
-const waterLevel = computed(() => {
-  return `${remainingPercent.value}%`
-})
+const fiveHourResetLabel = computed(() => nearestResetLabel('fiveHourResetAt'))
+const sevenDayResetLabel = computed(() => nearestResetLabel('sevenDayResetAt'))
 
 function progressTone(value: number): 'good' | 'warn' | 'danger' {
   if (value >= 90) return 'danger'
   if (value >= 70) return 'warn'
   return 'good'
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+function quotaTone(remaining: number): string {
+  if (remaining <= 10) return '#ff5d5d'
+  if (remaining <= 30) return '#f0b84b'
+  return config.value.themeColor
+}
+
+function nearestResetLabel(field: 'fiveHourResetAt' | 'sevenDayResetAt'): string {
+  const resets = (snapshot.value?.accounts ?? [])
+    .map((account) => account[field])
+    .filter(Boolean)
+    .map((value) => ({ value, timestamp: new Date(value).getTime() }))
+    .filter(({ timestamp }) => Number.isFinite(timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp)
+
+  return formatCompactDate(resets[0]?.value ?? '')
+}
+
+function formatCompactDate(value: string): string {
+  if (!value) return '--/-- --:--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '--/-- --:--'
+
+  const pad = (part: number): string => String(part).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function updateCurrentTime(): void {
+  const now = new Date()
+  currentTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 }
 
 function normalizeThemeColor(value: string): string | null {
@@ -201,19 +224,6 @@ function formatLatency(value: number | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${value}ms` : '--'
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('zh-CN').format(value)
-}
-
-function formatTokens(value: number): string {
-  const millions = value / 1_000_000
-  return `${millions.toFixed(millions >= 10 ? 1 : 2)}M`
-}
-
-function formatCost(value: number): string {
-  return `$${value.toFixed(4)}`
-}
-
 async function setExpanded(value: boolean): Promise<void> {
   panelVisible.value = value
   if (value) await window.api.showPanel()
@@ -243,18 +253,9 @@ function stopBallDrag(event: PointerEvent): void {
   void window.api.stopCollapsedWindowDrag()
 }
 
-function toggleBallMetric(): void {
-  ballMetric.value = ballMetric.value === 'fiveHour' ? 'sevenDay' : 'fiveHour'
-}
-
 function openPanelFromBall(): void {
   if (didDragBall) return
-  if (panelVisible.value) {
-    void setExpanded(false)
-    return
-  }
-
-  toggleBallMetric()
+  void setExpanded(!panelVisible.value)
 }
 
 function showWindowMenu(): void {
@@ -397,6 +398,8 @@ watch(
 )
 
 onMounted(async () => {
+  updateCurrentTime()
+  clockTimer = window.setInterval(updateCurrentTime, 30_000)
   removePanelVisibilityListener = window.api.onPanelVisibilityChanged((value) => {
     panelVisible.value = value
     if (isPanelView && value) void refreshActiveTab()
@@ -432,76 +435,99 @@ onBeforeUnmount(() => {
   removeProxyUpdatedListener?.()
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
   if (usageGlowTimer) window.clearTimeout(usageGlowTimer)
+  if (clockTimer) window.clearInterval(clockTimer)
 })
 </script>
 
 <template>
-  <main class="h-full w-full overflow-hidden text-foreground" :class="isPanelView && 'p-1'">
-    <div v-if="isBallView" class="relative flex h-[86px] w-full items-center gap-2 px-1">
-      <button
-        class="token-reservoir relative flex h-[70px] w-[70px] cursor-pointer items-center justify-center overflow-hidden rounded-full border border-white/15 shadow-2xl shadow-black/40"
-        :class="usageGlowActive && 'token-reservoir--glow'"
-        :style="{
-          '--water-level': waterLevel,
-          '--water-color': ballTone,
-          '--remaining-percent': `${remainingPercent}%`
-        }"
+  <main class="h-full w-full overflow-hidden text-foreground">
+    <div v-if="isBallView" class="quota-stage p-1">
+      <section
+        class="quota-widget relative flex h-full w-full cursor-pointer flex-col overflow-hidden px-6 pb-5 pt-[18px] text-white"
+        :class="usageGlowActive && 'quota-widget--glow'"
+        role="button"
+        tabindex="0"
+        aria-label="打开 Codex 配额详情"
+        :title="`${selectedGroupName} · 点击打开详情`"
         @click="openPanelFromBall"
+        @keydown.enter.prevent="setExpanded(true)"
+        @keydown.space.prevent="setExpanded(true)"
         @pointerdown="startBallDrag"
         @pointermove="trackBallDrag"
         @pointerup="stopBallDrag"
         @pointercancel="stopBallDrag"
         @contextmenu.prevent="showWindowMenu"
       >
-        <span class="token-reservoir__track absolute inset-1 rounded-full" />
-        <span class="token-reservoir__center absolute inset-[7px] rounded-full" />
-        <span class="relative z-10 flex flex-col items-center leading-none">
-          <span class="text-[15px] font-semibold text-white">{{ remainingPercent }}%</span>
-          <span class="mt-1 text-[10px] font-medium text-white/64">{{ ballMetricLabel }}</span>
-        </span>
-      </button>
-      <div
-        class="absolute bottom-1 left-[62px] z-20 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/20 bg-black/55 px-1 text-[8px] font-semibold text-white shadow-lg"
-        :style="{ color: proxyStatusTone }"
-      >
-        {{ proxyStatusLabel }}
-      </div>
-      <section
-        class="ball-stats flex h-[72px] min-w-0 flex-1 flex-col justify-center rounded-lg border border-white/10 bg-black/70 px-3 text-white shadow-xl shadow-black/30"
-        aria-label="今日统计"
-      >
-        <div class="flex items-center justify-between gap-2 leading-3">
-          <span class="truncate text-[10px] font-medium text-white/80">{{
-            selectedGroupName
-          }}</span>
-          <span class="shrink-0 text-[9px] text-white/45">今日</span>
-        </div>
-        <div class="mt-1 space-y-0.5">
-          <div class="flex h-3 items-center justify-between gap-2 leading-3">
-            <div class="text-[9px] text-white/45">请求</div>
-            <div class="truncate text-[11px] font-semibold leading-3">
-              {{ formatNumber(snapshot?.todayStats.requests ?? 0) }}
+        <header class="relative z-10 flex items-center">
+          <img :src="codexIcon" alt="" class="quota-logo h-9 w-9 shrink-0" />
+          <div class="ml-2.5 min-w-0">
+            <div class="truncate text-[21px] font-bold leading-5 tracking-[-0.025em]">Codex</div>
+            <div class="mt-1 truncate text-[9px] font-medium leading-none text-white/42">
+              {{ selectedGroupName }} · {{ accountCount }} 个账号
             </div>
           </div>
-          <div class="flex h-3 items-center justify-between gap-2 leading-3">
-            <div class="text-[9px] text-white/45">Token</div>
-            <div class="truncate text-[11px] font-semibold leading-3">
-              {{ formatTokens(snapshot?.todayStats.tokens ?? 0) }}
+          <time class="ml-auto self-start text-[12px] font-medium tabular-nums text-white/48">
+            {{ currentTime }}
+          </time>
+        </header>
+
+        <div class="relative z-10 mt-[18px] flex flex-1 flex-col justify-between">
+          <section aria-label="5 小时剩余配额">
+            <div class="flex items-end justify-between">
+              <span class="text-[18px] font-bold leading-none tracking-[-0.02em]">5h</span>
+              <span class="text-[29px] font-bold leading-[0.8] tracking-[-0.035em] tabular-nums">
+                {{ snapshot ? `${fiveHourRemainingPercent}%` : '--' }}
+              </span>
             </div>
-          </div>
-          <div class="flex h-3 items-center justify-between gap-2 leading-3">
-            <div class="text-[9px] text-white/45">费用</div>
-            <div class="truncate text-[11px] font-semibold leading-3">
-              {{ formatCost(snapshot?.todayStats.cost ?? 0) }}
+            <div class="quota-meter mt-3">
+              <span
+                :style="{
+                  width: `${snapshot ? fiveHourRemainingPercent : 0}%`,
+                  backgroundColor: quotaTone(fiveHourRemainingPercent)
+                }"
+              />
             </div>
-          </div>
+            <div class="mt-1 flex items-center text-[9px] font-medium text-white/42">
+              <Clock3 class="mr-1 h-2.5 w-2.5" />
+              <span class="tabular-nums">{{ fiveHourResetLabel }}</span>
+            </div>
+          </section>
+
+          <section aria-label="每周剩余配额">
+            <div class="flex items-end justify-between">
+              <span class="text-[18px] font-bold leading-none tracking-[-0.02em]">Week</span>
+              <span class="text-[29px] font-bold leading-[0.8] tracking-[-0.035em] tabular-nums">
+                {{ snapshot ? `${sevenDayRemainingPercent}%` : '--' }}
+              </span>
+            </div>
+            <div class="quota-meter mt-3">
+              <span
+                :style="{
+                  width: `${snapshot ? sevenDayRemainingPercent : 0}%`,
+                  backgroundColor: quotaTone(sevenDayRemainingPercent)
+                }"
+              />
+            </div>
+            <div
+              class="mt-1 flex items-center justify-between text-[9px] font-medium text-white/42"
+            >
+              <span class="flex items-center">
+                <Clock3 class="mr-1 h-2.5 w-2.5" />
+                <span class="tabular-nums">{{ sevenDayResetLabel }}</span>
+              </span>
+              <span class="flex items-center gap-1" :style="{ color: proxyStatusTone }">
+                <span class="h-1.5 w-1.5 rounded-full bg-current" />
+                {{ proxyStatusLabel }}
+              </span>
+            </div>
+          </section>
         </div>
       </section>
     </div>
 
     <section
       v-if="isPanelView"
-      class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-black shadow-2xl shadow-black/45 backdrop-blur-lg"
+      class="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-black backdrop-blur-lg"
     >
       <header
         class="drag-region flex h-12 items-center justify-between border-b border-border px-3"

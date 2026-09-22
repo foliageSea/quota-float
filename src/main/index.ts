@@ -145,8 +145,8 @@ const defaultConfig: AppConfig = {
   ballPosition: null
 }
 
-const collapsedSize = 86
-const collapsedWindowWidth = 270
+const collapsedWindowWidth = 125
+const collapsedWindowHeight = 120
 
 let mainWindow: BrowserWindow | null = null
 let ballWindow: BrowserWindow | null = null
@@ -745,10 +745,10 @@ function clampPositionToWorkArea(
   position: WindowPosition,
   width = collapsedWindowWidth
 ): WindowPosition {
-  const target = { x: position.x, y: position.y, width, height: collapsedSize }
+  const target = { x: position.x, y: position.y, width, height: collapsedWindowHeight }
   const { workArea } = screen.getDisplayMatching(target)
   const maxX = workArea.x + workArea.width - width
-  const maxY = workArea.y + workArea.height - collapsedSize
+  const maxY = workArea.y + workArea.height - collapsedWindowHeight
 
   return {
     x: Math.round(Math.min(Math.max(position.x, workArea.x), maxX)),
@@ -760,7 +760,7 @@ function getDefaultBallPosition(): WindowPosition {
   const { workArea } = screen.getPrimaryDisplay()
   return {
     x: workArea.x + workArea.width - collapsedWindowWidth - 24,
-    y: workArea.y + workArea.height - collapsedSize - 64
+    y: workArea.y + workArea.height - collapsedWindowHeight - 64
   }
 }
 
@@ -800,9 +800,9 @@ function positionPanelNearBall(): void {
   const expandedSize = { width: 390, height: 580 }
   const bounds = ballWindow.getBounds()
   const { workArea } = screen.getDisplayMatching(bounds)
-  const ballCenterX = bounds.x + collapsedSize / 2
+  const ballCenterX = bounds.x + collapsedWindowWidth / 2
   const aboveBallY = bounds.y - expandedSize.height - 8
-  const belowBallY = bounds.y + collapsedSize + 8
+  const belowBallY = bounds.y + collapsedWindowHeight + 8
   const minX = workArea.x
   const maxX = workArea.x + workArea.width - expandedSize.width
   const minY = workArea.y
@@ -854,7 +854,7 @@ function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
         x: Math.round(point.x - collapsedDragOffset.x),
         y: Math.round(point.y - collapsedDragOffset.y),
         width: collapsedWindowWidth,
-        height: collapsedSize
+        height: collapsedWindowHeight
       },
       false
     )
@@ -915,13 +915,13 @@ function createBallWindow(): void {
 
   const window = new BrowserWindow({
     width: collapsedWindowWidth,
-    height: collapsedSize,
+    height: collapsedWindowHeight,
     x: position.x,
     y: position.y,
     minWidth: collapsedWindowWidth,
-    minHeight: collapsedSize,
+    minHeight: collapsedWindowHeight,
     maxWidth: collapsedWindowWidth,
-    maxHeight: collapsedSize,
+    maxHeight: collapsedWindowHeight,
     show: false,
     frame: false,
     transparent: true,
@@ -969,7 +969,7 @@ function createPanelWindow(): void {
     alwaysOnTop: true,
     skipTaskbar: true,
     autoHideMenuBar: true,
-    hasShadow: true,
+    hasShadow: false,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

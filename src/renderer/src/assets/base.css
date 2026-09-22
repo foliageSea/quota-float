@@ -90,74 +90,118 @@ select {
   -webkit-app-region: no-drag;
 }
 
-.token-reservoir {
-  --water-level: 0%;
-  --water-color: var(--primary);
-  --remaining-percent: 0%;
-  background: #171b22;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+.quota-stage {
+  width: 250px;
+  height: 240px;
+  transform: scale(0.5);
+  transform-origin: left top;
 }
 
-.token-reservoir::after {
+.quota-widget {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 20% -12%, rgba(83, 94, 119, 0.22), transparent 38%),
+    linear-gradient(155deg, rgba(24, 28, 37, 0.98), rgba(9, 11, 15, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.quota-widget:hover {
+  border-color: color-mix(in srgb, var(--primary) 28%, rgba(255, 255, 255, 0.1));
+}
+
+.quota-widget:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 70%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.quota-widget::before {
   position: absolute;
-  inset: -35%;
-  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  border-radius: inherit;
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 42%);
+}
+
+.quota-widget::after {
+  position: absolute;
+  inset: -45%;
+  z-index: 20;
   pointer-events: none;
   content: '';
   background: linear-gradient(
     115deg,
     transparent 38%,
-    color-mix(in srgb, var(--water-color) 15%, transparent) 46%,
-    rgba(255, 255, 255, 0.72) 50%,
-    color-mix(in srgb, var(--water-color) 18%, transparent) 54%,
+    color-mix(in srgb, var(--primary) 10%, transparent) 46%,
+    rgba(255, 255, 255, 0.38) 50%,
+    color-mix(in srgb, var(--primary) 12%, transparent) 54%,
     transparent 62%
   );
   opacity: 0;
   transform: translateX(-42%) rotate(8deg);
 }
 
-.token-reservoir--glow {
-  animation: token-reservoir-pulse 1200ms ease-out;
+.quota-widget--glow {
+  animation: quota-widget-pulse 1200ms ease-out;
 }
 
-.token-reservoir--glow::after {
-  animation: token-reservoir-sheen 900ms ease-out;
+.quota-widget--glow::after {
+  animation: quota-widget-sheen 900ms ease-out;
 }
 
-.token-reservoir__track {
-  z-index: 1;
-  background:
-    conic-gradient(var(--water-color) var(--remaining-percent), #2a303a 0),
-    #2a303a;
-  transition: background 240ms ease;
+.quota-logo {
+  border-radius: 9px;
+  box-shadow:
+    inset 0 -1px 0 rgba(15, 23, 42, 0.08),
+    0 6px 15px rgba(0, 0, 0, 0.2);
 }
 
-.token-reservoir__center {
-  z-index: 2;
-  background: #171b22;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+.quota-meter {
+  height: 11px;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: #505a51;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-@keyframes token-reservoir-pulse {
+.quota-meter > span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 10px color-mix(in srgb, var(--primary) 18%, transparent);
+  transition:
+    width 360ms ease,
+    background-color 240ms ease;
+}
+
+@keyframes quota-widget-pulse {
   0% {
-    box-shadow:
-      inset 0 0 0 0 color-mix(in srgb, var(--water-color) 45%, transparent),
-      0 10px 24px rgba(0, 0, 0, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
   45% {
     box-shadow:
-      inset 0 0 0 4px color-mix(in srgb, var(--water-color) 36%, transparent),
-      inset 0 0 18px color-mix(in srgb, var(--water-color) 48%, transparent),
-      0 10px 24px rgba(0, 0, 0, 0.28);
+      inset 0 0 0 2px color-mix(in srgb, var(--primary) 34%, transparent),
+      inset 0 0 26px color-mix(in srgb, var(--primary) 18%, transparent);
   }
   100% {
-    box-shadow:
-      inset 0 0 0 0 transparent,
-      0 10px 24px rgba(0, 0, 0, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 }
 
-@keyframes token-reservoir-sheen {
+@keyframes quota-widget-sheen {
   0% {
     opacity: 0;
     transform: translateX(-42%) rotate(8deg);
