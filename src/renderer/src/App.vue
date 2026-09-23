@@ -51,7 +51,8 @@ const defaultConfig: AppConfig = {
   proxyPollIntervalSeconds: 300,
   webServerPort: 37890,
   webNetworkAddress: 'auto',
-  ballPosition: null
+  ballPosition: null,
+  ballWidth: 125
 }
 
 const view = new URLSearchParams(window.location.search).get('view') === 'panel' ? 'panel' : 'ball'
@@ -73,6 +74,7 @@ const webNetworkInterfaces = ref<WebNetworkInterface[]>([])
 const usageGlowActive = ref(false)
 const apiKeyVisible = ref(false)
 const currentTime = ref('')
+const ballScale = ref(window.innerWidth / 250)
 const themeColors = ['#20c997', '#38bdf8', '#f0b84b', '#fb7185', '#a78bfa', '#f472b6']
 let proxyRefreshTimer: number | undefined
 let usageGlowTimer: number | undefined
@@ -81,6 +83,7 @@ let dragPointerId: number | null = null
 let dragStartX = 0
 let dragStartY = 0
 let didDragBall = false
+let resizePointerId: number | null = null
 let removePanelVisibilityListener: (() => void) | undefined
 let removeConfigUpdatedListener: (() => void) | undefined
 let removeUsageUpdatedListener: (() => void) | undefined
@@ -162,6 +165,10 @@ function formatCompactDate(value: string): string {
 function updateCurrentTime(): void {
   const now = new Date()
   currentTime.value = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+function updateBallScale(): void {
+  if (isBallView) ballScale.value = window.innerWidth / 250
 }
 
 function normalizeThemeColor(value: string): string | null {
@@ -251,6 +258,20 @@ function stopBallDrag(event: PointerEvent): void {
   if (dragPointerId !== event.pointerId) return
   dragPointerId = null
   void window.api.stopCollapsedWindowDrag()
+}
+
+function startBallResize(event: PointerEvent): void {
+  if (event.button !== 0) return
+  resizePointerId = event.pointerId
+  didDragBall = true
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  void window.api.startCollapsedWindowResize(event.screenX, event.screenY)
+}
+
+function stopBallResize(event: PointerEvent): void {
+  if (resizePointerId !== event.pointerId) return
+  resizePointerId = null
+  void window.api.stopCollapsedWindowResize()
 }
 
 function openPanelFromBall(): void {
@@ -367,7 +388,8 @@ async function save(): Promise<void> {
       proxyPollIntervalSeconds: proxyPollIntervalInput.value || 300,
       webServerPort: Number(config.value.webServerPort) || 37890,
       webNetworkAddress: config.value.webNetworkAddress,
-      ballPosition: ballPosition ? { x: ballPosition.x, y: ballPosition.y } : null
+      ballPosition: ballPosition ? { x: ballPosition.x, y: ballPosition.y } : null,
+      ballWidth: config.value.ballWidth
     })
     refreshIntervalInput.value = config.value.refreshIntervalSeconds
     proxyPollIntervalInput.value = config.value.proxyPollIntervalSeconds
@@ -398,6 +420,8 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', updateBallScale)
+  updateBallScale()
   updateCurrentTime()
   clockTimer = window.setInterval(updateCurrentTime, 30_000)
   removePanelVisibilityListener = window.api.onPanelVisibilityChanged((value) => {
@@ -429,6 +453,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateBallScale)
   removePanelVisibilityListener?.()
   removeConfigUpdatedListener?.()
   removeUsageUpdatedListener?.()
@@ -436,12 +461,17 @@ onBeforeUnmount(() => {
   if (proxyRefreshTimer) window.clearInterval(proxyRefreshTimer)
   if (usageGlowTimer) window.clearTimeout(usageGlowTimer)
   if (clockTimer) window.clearInterval(clockTimer)
+  if (resizePointerId !== null) void window.api.stopCollapsedWindowResize()
 })
 </script>
 
 <template>
   <main class="h-full w-full overflow-hidden text-foreground">
-    <div v-if="isBallView" class="quota-stage p-1">
+    <div
+      v-if="isBallView"
+      class="quota-stage p-1"
+      :style="{ '--ball-scale': String(ballScale) }"
+    >
       <section
         class="quota-widget relative flex h-full w-full cursor-pointer flex-col overflow-hidden px-6 pb-5 pt-[18px] text-white"
         :class="usageGlowActive && 'quota-widget--glow'"
@@ -522,6 +552,14 @@ onBeforeUnmount(() => {
             </div>
           </section>
         </div>
+        <span
+          class="quota-resize-handle"
+          title="调整悬浮球大小"
+          @click.stop.prevent
+          @pointerdown.stop.prevent="startBallResize"
+          @pointerup.stop.prevent="stopBallResize"
+          @pointercancel.stop.prevent="stopBallResize"
+        />
       </section>
     </div>
 

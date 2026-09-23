@@ -12,6 +12,7 @@ export type AppConfig = {
   webServerPort: number
   webNetworkAddress: string
   ballPosition: { x: number; y: number } | null
+  ballWidth: number
 }
 
 export type WebNetworkInterface = {
@@ -146,6 +147,9 @@ const api = {
   startCollapsedWindowDrag: (cursorX: number, cursorY: number) =>
     ipcRenderer.invoke('window:start-collapsed-drag', cursorX, cursorY),
   stopCollapsedWindowDrag: () => ipcRenderer.invoke('window:stop-collapsed-drag'),
+  startCollapsedWindowResize: (cursorX: number, cursorY: number) =>
+    ipcRenderer.invoke('window:start-collapsed-resize', cursorX, cursorY),
+  stopCollapsedWindowResize: () => ipcRenderer.invoke('window:stop-collapsed-resize'),
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.invoke('window:set-always-on-top', enabled)
 }
 

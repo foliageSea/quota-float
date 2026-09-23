@@ -29,6 +29,8 @@ export type TokenBallAPI = {
   hidePanel: () => Promise<void>
   startCollapsedWindowDrag: (cursorX: number, cursorY: number) => Promise<void>
   stopCollapsedWindowDrag: () => Promise<void>
+  startCollapsedWindowResize: (cursorX: number, cursorY: number) => Promise<void>
+  stopCollapsedWindowResize: () => Promise<void>
   setAlwaysOnTop: (enabled: boolean) => Promise<void>
 }
 

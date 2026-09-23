@@ -17,6 +17,7 @@ type AppConfig = {
   webServerPort: number
   webNetworkAddress: string
   ballPosition: WindowPosition | null
+  ballWidth: number
 }
 
 type WindowPosition = {
@@ -142,11 +143,14 @@ const defaultConfig: AppConfig = {
   proxyPollIntervalSeconds: 300,
   webServerPort: 37890,
   webNetworkAddress: 'auto',
-  ballPosition: null
+  ballPosition: null,
+  ballWidth: 125
 }
 
 const collapsedWindowWidth = 125
 const collapsedWindowHeight = 120
+const collapsedWindowMinWidth = 100
+const collapsedWindowMaxWidth = 250
 
 let mainWindow: BrowserWindow | null = null
 let ballWindow: BrowserWindow | null = null
@@ -154,6 +158,12 @@ let panelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let collapsedDragTimer: ReturnType<typeof setInterval> | null = null
 let collapsedDragOffset: { x: number; y: number } | null = null
+let collapsedResizeTimer: ReturnType<typeof setInterval> | null = null
+let collapsedResizeStart: {
+  cursorX: number
+  cursorY: number
+  bounds: Electron.Rectangle
+} | null = null
 let usageRefreshTimer: ReturnType<typeof setInterval> | null = null
 let latestUsageSnapshot: Awaited<ReturnType<typeof refreshUsage>> | null = null
 let latestProxySnapshot: Awaited<ReturnType<typeof refreshProxy>> | null = null
@@ -179,7 +189,8 @@ function loadConfig(): AppConfig {
       proxyPollIntervalSeconds: Math.max(15, Number(saved.proxyPollIntervalSeconds ?? 300) || 300),
       webServerPort: normalizeWebServerPort(saved.webServerPort),
       webNetworkAddress: stringValue(saved.webNetworkAddress).trim() || 'auto',
-      ballPosition: normalizeWindowPosition(saved.ballPosition)
+      ballPosition: normalizeWindowPosition(saved.ballPosition),
+      ballWidth: normalizeBallWidth(saved.ballWidth)
     }
   } catch {
     return defaultConfig
@@ -243,6 +254,20 @@ function normalizeWindowPosition(value: unknown): WindowPosition | null {
   return { x: Math.round(position.x), y: Math.round(position.y) }
 }
 
+function normalizeBallWidth(value: unknown): number {
+  const width = Math.round(Number(value))
+  if (!Number.isFinite(width)) return defaultConfig.ballWidth
+  return Math.min(collapsedWindowMaxWidth, Math.max(collapsedWindowMinWidth, width))
+}
+
+function getBallWindowSize(value: unknown): { width: number; height: number } {
+  const width = normalizeBallWidth(value)
+  return {
+    width,
+    height: Math.round((width * collapsedWindowHeight) / collapsedWindowWidth)
+  }
+}
+
 function saveConfig(config: AppConfig): AppConfig {
   const normalized: AppConfig = {
     baseUrl: config.baseUrl.trim().replace(/\/+$/, ''),
@@ -254,7 +279,8 @@ function saveConfig(config: AppConfig): AppConfig {
     proxyPollIntervalSeconds: Math.max(15, Number(config.proxyPollIntervalSeconds) || 300),
     webServerPort: normalizeWebServerPort(config.webServerPort),
     webNetworkAddress: config.webNetworkAddress.trim() || 'auto',
-    ballPosition: normalizeWindowPosition(config.ballPosition)
+    ballPosition: normalizeWindowPosition(config.ballPosition),
+    ballWidth: normalizeBallWidth(config.ballWidth)
   }
 
   writeFileSync(getConfigPath(), JSON.stringify(normalized, null, 2))
@@ -743,12 +769,12 @@ function loadRenderer(window: BrowserWindow, view: 'ball' | 'panel'): void {
 
 function clampPositionToWorkArea(
   position: WindowPosition,
-  width = collapsedWindowWidth
+  size = getBallWindowSize(loadConfig().ballWidth)
 ): WindowPosition {
-  const target = { x: position.x, y: position.y, width, height: collapsedWindowHeight }
+  const target = { x: position.x, y: position.y, ...size }
   const { workArea } = screen.getDisplayMatching(target)
-  const maxX = workArea.x + workArea.width - width
-  const maxY = workArea.y + workArea.height - collapsedWindowHeight
+  const maxX = workArea.x + workArea.width - size.width
+  const maxY = workArea.y + workArea.height - size.height
 
   return {
     x: Math.round(Math.min(Math.max(position.x, workArea.x), maxX)),
@@ -756,21 +782,27 @@ function clampPositionToWorkArea(
   }
 }
 
-function getDefaultBallPosition(): WindowPosition {
+function getDefaultBallPosition(size = getBallWindowSize(loadConfig().ballWidth)): WindowPosition {
   const { workArea } = screen.getPrimaryDisplay()
   return {
-    x: workArea.x + workArea.width - collapsedWindowWidth - 24,
-    y: workArea.y + workArea.height - collapsedWindowHeight - 64
+    x: workArea.x + workArea.width - size.width - 24,
+    y: workArea.y + workArea.height - size.height - 64
   }
 }
 
 function getSavedBallPosition(): WindowPosition {
-  return clampPositionToWorkArea(loadConfig().ballPosition ?? getDefaultBallPosition())
+  const config = loadConfig()
+  const size = getBallWindowSize(config.ballWidth)
+  return clampPositionToWorkArea(config.ballPosition ?? getDefaultBallPosition(size), size)
 }
 
 function updateBallPosition(position: WindowPosition): void {
   const config = loadConfig()
-  saveConfig({ ...config, ballPosition: clampPositionToWorkArea(position) })
+  const savedConfig = saveConfig({
+    ...config,
+    ballPosition: clampPositionToWorkArea(position, getBallWindowSize(config.ballWidth))
+  })
+  broadcastConfig(savedConfig)
 }
 
 function saveCurrentBallPosition(): void {
@@ -783,7 +815,8 @@ function resetBallPosition(): void {
   if (!ballWindow) createBallWindow()
   if (!ballWindow) return
 
-  const position = clampPositionToWorkArea(getDefaultBallPosition())
+  const size = getBallWindowSize(loadConfig().ballWidth)
+  const position = clampPositionToWorkArea(getDefaultBallPosition(size), size)
   ballWindow.setPosition(position.x, position.y, false)
   updateBallPosition(position)
   if (panelWindow?.isVisible()) positionPanelNearBall()
@@ -800,9 +833,9 @@ function positionPanelNearBall(): void {
   const expandedSize = { width: 390, height: 580 }
   const bounds = ballWindow.getBounds()
   const { workArea } = screen.getDisplayMatching(bounds)
-  const ballCenterX = bounds.x + collapsedWindowWidth / 2
+  const ballCenterX = bounds.x + bounds.width / 2
   const aboveBallY = bounds.y - expandedSize.height - 8
-  const belowBallY = bounds.y + collapsedWindowHeight + 8
+  const belowBallY = bounds.y + bounds.height + 8
   const minX = workArea.x
   const maxX = workArea.x + workArea.width - expandedSize.width
   const minY = workArea.y
@@ -849,12 +882,13 @@ function startCollapsedWindowDrag(cursorX: number, cursorY: number): void {
     }
 
     const point = screen.getCursorScreenPoint()
+    const bounds = ballWindow.getBounds()
     ballWindow.setBounds(
       {
         x: Math.round(point.x - collapsedDragOffset.x),
         y: Math.round(point.y - collapsedDragOffset.y),
-        width: collapsedWindowWidth,
-        height: collapsedWindowHeight
+        width: bounds.width,
+        height: bounds.height
       },
       false
     )
@@ -868,6 +902,59 @@ function stopCollapsedWindowDrag(): void {
   collapsedDragTimer = null
   collapsedDragOffset = null
   saveCurrentBallPosition()
+}
+
+function startCollapsedWindowResize(cursorX: number, cursorY: number): void {
+  if (!ballWindow) return
+  stopCollapsedWindowDrag()
+  collapsedResizeStart = { cursorX, cursorY, bounds: ballWindow.getBounds() }
+  if (collapsedResizeTimer) clearInterval(collapsedResizeTimer)
+
+  collapsedResizeTimer = setInterval(() => {
+    if (!ballWindow || !collapsedResizeStart) {
+      stopCollapsedWindowResize()
+      return
+    }
+
+    const point = screen.getCursorScreenPoint()
+    const { bounds } = collapsedResizeStart
+    const { workArea } = screen.getDisplayMatching(bounds)
+    const availableWidth = workArea.x + workArea.width - bounds.x
+    const availableHeight = workArea.y + workArea.height - bounds.y
+    const maxWidthFromHeight = Math.floor(
+      (availableHeight * collapsedWindowWidth) / collapsedWindowHeight
+    )
+    const width = normalizeBallWidth(
+      Math.min(
+        bounds.width + point.x - collapsedResizeStart.cursorX,
+        availableWidth,
+        maxWidthFromHeight
+      )
+    )
+    const size = getBallWindowSize(width)
+    ballWindow.setBounds({ x: bounds.x, y: bounds.y, ...size }, false)
+
+    if (panelWindow?.isVisible()) positionPanelNearBall()
+  }, 16)
+}
+
+function stopCollapsedWindowResize(): void {
+  if (collapsedResizeTimer) clearInterval(collapsedResizeTimer)
+  collapsedResizeTimer = null
+  collapsedResizeStart = null
+  if (!ballWindow || ballWindow.isDestroyed()) return
+
+  const bounds = ballWindow.getBounds()
+  const config = loadConfig()
+  const size = getBallWindowSize(bounds.width)
+  const position = clampPositionToWorkArea(bounds, size)
+  ballWindow.setBounds({ ...position, ...size }, false)
+  const savedConfig = saveConfig({
+    ...config,
+    ballPosition: position,
+    ballWidth: size.width
+  })
+  broadcastConfig(savedConfig)
 }
 
 function openPanel(): void {
@@ -911,17 +998,14 @@ function attachWindowHandlers(window: BrowserWindow): void {
 function createBallWindow(): void {
   if (ballWindow && !ballWindow.isDestroyed()) return
 
+  const config = loadConfig()
+  const size = getBallWindowSize(config.ballWidth)
   const position = getSavedBallPosition()
 
   const window = new BrowserWindow({
-    width: collapsedWindowWidth,
-    height: collapsedWindowHeight,
+    ...size,
     x: position.x,
     y: position.y,
-    minWidth: collapsedWindowWidth,
-    minHeight: collapsedWindowHeight,
-    maxWidth: collapsedWindowWidth,
-    maxHeight: collapsedWindowHeight,
     show: false,
     frame: false,
     transparent: true,
@@ -1051,6 +1135,10 @@ app.whenReady().then(async () => {
     startCollapsedWindowDrag(cursorX, cursorY)
   )
   ipcMain.handle('window:stop-collapsed-drag', () => stopCollapsedWindowDrag())
+  ipcMain.handle('window:start-collapsed-resize', (_, cursorX: number, cursorY: number) =>
+    startCollapsedWindowResize(cursorX, cursorY)
+  )
+  ipcMain.handle('window:stop-collapsed-resize', () => stopCollapsedWindowResize())
   ipcMain.handle('window:set-always-on-top', (_, enabled: boolean) => {
     setFloatingWindowAlwaysOnTop(ballWindow, enabled)
     setFloatingWindowAlwaysOnTop(panelWindow, enabled)
